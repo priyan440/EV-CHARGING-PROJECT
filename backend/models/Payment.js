@@ -27,13 +27,15 @@ const paymentSchema = new mongoose.Schema(
         "PENDING",
         "AUTHORIZED",
         "CAPTURED",
+        "SUCCESS",
+        "Success",
         "FAILED",
         "REFUNDED",
         "PARTIALLY_REFUNDED",
         "CANCELLED",
         "DISPUTED"
       ],
-      default: "INITIATED"
+      default: "CAPTURED"
     },
     
     failureReason: { type: String },

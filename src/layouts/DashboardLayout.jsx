@@ -10,7 +10,6 @@ import {
   FiNavigation, FiDollarSign, FiZap, FiShield, FiActivity, FiType
 } from 'react-icons/fi';
 import AnimatedBG from '../components/AnimatedBG';
-import VoltBotChatbot from '../components/VoltBotChatbot';
 
 const DashboardLayout = ({ children, activeTab, setActiveTab }) => {
   const { user, logout, loginAsRole } = useAuth();
@@ -352,9 +351,6 @@ const DashboardLayout = ({ children, activeTab, setActiveTab }) => {
           {children}
         </main>
       </div>
-
-      {/* FLOATING VOLTBOT AI CHATBOT */}
-      <VoltBotChatbot />
     </div>
   );
 };

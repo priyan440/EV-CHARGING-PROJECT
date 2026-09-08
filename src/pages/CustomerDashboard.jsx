@@ -71,23 +71,42 @@ export default function CustomerDashboard() {
         <div className="absolute right-32 -bottom-12 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="px-3 py-1 text-[10px] font-extrabold uppercase font-mono tracking-wider bg-emerald-500/20 text-emerald-400 rounded-full border border-emerald-500/30">
-                CUSTOMER DASHBOARD
-              </span>
-              <span className="px-3 py-1 text-[10px] font-extrabold font-mono tracking-wider bg-cyan-500/20 text-cyan-400 rounded-full border border-cyan-500/30">
-                COUNTER ID: {userCounterId}
-              </span>
+          <div className="flex items-start sm:items-center gap-4">
+            {currentUser?.profileImage ? (
+              <img
+                src={currentUser.profileImage}
+                alt={userName}
+                className="w-16 h-16 rounded-2xl object-cover border-2 border-emerald-500/60 shadow-xl shadow-emerald-500/20 shrink-0"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 font-black text-2xl flex items-center justify-center shadow-xl shadow-emerald-500/20 shrink-0">
+                {userName ? userName[0].toUpperCase() : "C"}
+              </div>
+            )}
+
+            <div>
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <span className="px-3 py-1 text-[10px] font-extrabold uppercase font-mono tracking-wider bg-emerald-500/20 text-emerald-400 rounded-full border border-emerald-500/30">
+                  CUSTOMER DASHBOARD
+                </span>
+                <span className="px-3 py-1 text-[10px] font-extrabold font-mono tracking-wider bg-cyan-500/20 text-cyan-400 rounded-full border border-cyan-500/30">
+                  CUSTOMER ID: {userCounterId}
+                </span>
+                {currentUser?.authProvider?.includes("google") && (
+                  <span className="px-2.5 py-1 text-[10px] font-extrabold font-mono tracking-wider bg-blue-500/20 text-blue-400 rounded-full border border-blue-500/30 flex items-center gap-1">
+                    Google Connected
+                  </span>
+                )}
+              </div>
+
+              <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
+                Welcome back, <span className="text-emerald-400">{userName}</span>! 👋
+              </h1>
+
+              <p className="text-slate-300 text-xs md:text-sm mt-1 max-w-xl leading-relaxed">
+                Your registered vehicle <span className="font-mono text-emerald-400 font-bold">{primaryVehicle.number}</span> is ready for smart charging. Discover nearest stations, manage bookings, and monitor live charging.
+              </p>
             </div>
-
-            <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
-              Welcome back, <span className="text-emerald-400">{userName}</span>! 👋
-            </h1>
-
-            <p className="text-slate-300 text-xs md:text-sm mt-1 max-w-xl leading-relaxed">
-              Your registered vehicle <span className="font-mono text-emerald-400 font-bold">{primaryVehicle.number}</span> is ready for smart charging. Discover nearest stations, manage bookings, and monitor live charging.
-            </p>
           </div>
 
           <div className="flex flex-wrap gap-3">
@@ -148,6 +167,13 @@ export default function CustomerDashboard() {
                 <span>Connector: CCS2</span>
               </div>
             </div>
+
+            <Link
+              to="/customer/vehicles"
+              className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 mt-3 pt-3 border-t border-slate-800 font-grotesk"
+            >
+              Manage My Vehicles <ArrowRight size={12} />
+            </Link>
           </div>
 
           {/* Total Bookings Card */}

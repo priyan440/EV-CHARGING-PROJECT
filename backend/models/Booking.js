@@ -37,20 +37,27 @@ const bookingSchema = new mongoose.Schema(
         "DRAFT",
         "PAYMENT_PENDING",
         "CONFIRMED",
+        "Confirmed",
         "ARRIVED",
+        "Arrived",
         "CHECKED_IN",
+        "CheckedIn",
         "CHARGING",
+        "Charging",
         "COMPLETED",
+        "Completed",
         "CANCELLED",
+        "Cancelled",
         "EXPIRED",
+        "Expired",
         "NO_SHOW"
       ],
-      default: "PAYMENT_PENDING"
+      default: "CONFIRMED"
     },
     paymentStatus: {
       type: String,
-      enum: ["INITIATED", "PENDING", "CAPTURED", "FAILED", "REFUNDED", "EXPIRED"],
-      default: "PENDING"
+      enum: ["INITIATED", "PENDING", "Pending", "CAPTURED", "Paid", "FAILED", "Failed", "REFUNDED", "Refunded", "EXPIRED"],
+      default: "Paid"
     },
     paymentMethod: { type: String, default: "Razorpay" }
   },

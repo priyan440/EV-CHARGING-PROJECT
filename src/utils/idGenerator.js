@@ -11,12 +11,15 @@ const PREFIX_KEYS = {
   INV: "ev_seq_inv",
   MT: "ev_seq_mt",
   CMP: "ev_seq_cmp",
+  VEH: "ev_seq_veh",
+  ADM: "ev_seq_adm",
+  TECH: "ev_seq_tech",
 };
 
 /**
  * Get next formatted counter ID for a given entity prefix
- * @param {string} prefix - Entity prefix (CUS, OWNER, STA, CHG, BK, SES, PAY, INV, MT, CMP)
- * @param {number} padding - Zero padding length (default 4 for CUS/OWNER, 3 for STA, 6 for others)
+ * @param {string} prefix - Entity prefix (CUS, OWNER, STA, CHG, BK, SES, PAY, INV, MT, CMP, VEH, ADM, TECH)
+ * @param {number} padding - Zero padding length
  */
 export function generateCounterId(prefix, padding = 4) {
   const storageKey = PREFIX_KEYS[prefix] || `ev_seq_${prefix.toLowerCase()}`;
@@ -28,6 +31,7 @@ export function generateCounterId(prefix, padding = 4) {
 
 export const getNextCustomerId = () => generateCounterId("CUS", 4);
 export const getNextOwnerId = () => generateCounterId("OWNER", 4);
+export const getNextAdminId = () => generateCounterId("ADM", 4);
 export const getNextStationId = () => generateCounterId("STA", 3);
 export const getNextChargerId = () => generateCounterId("CHG", 4);
 export const getNextBookingId = () => generateCounterId("BK", 6);
@@ -36,6 +40,8 @@ export const getNextPaymentId = () => generateCounterId("PAY", 6);
 export const getNextInvoiceId = () => generateCounterId("INV", 6);
 export const getNextMaintenanceId = () => generateCounterId("MT", 6);
 export const getNextComplaintId = () => generateCounterId("CMP", 6);
+export const getNextVehicleId = () => generateCounterId("VEH", 3);
+export const getNextTechnicianId = () => generateCounterId("TECH", 4);
 
 // Backward compatibility alias
 export const getNextCounterId = getNextCustomerId;

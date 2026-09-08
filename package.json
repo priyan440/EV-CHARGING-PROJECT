@@ -5,16 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server": "node backend/server.js",
+    "seed": "node backend/config/seed.js",
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@react-oauth/google": "^0.13.5",
     "axios": "^1.20.0",
     "canvas-confetti": "^1.9.4",
     "framer-motion": "^12.43.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
+    "jwt-decode": "^4.0.0",
     "leaflet": "^1.9.4",
     "leaflet.markercluster": "^1.5.3",
     "lucide-react": "^1.37.0",

@@ -1,10 +1,16 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
+import RoleProtectedRoute from "./components/RoleProtectedRoute";
 import MainLayout from "./layouts/MainLayout";
+import { useAuth } from "./contexts/AuthContext";
+import VoltBotChatbot from "./components/VoltBotChatbot";
 
-// Auth Pages
+// Auth & System Pages
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
+import Forbidden from "./pages/Forbidden";
+import NotFound from "./pages/NotFound";
 
 // Customer Pages
 import CustomerDashboard from "./pages/CustomerDashboard";
@@ -46,16 +52,43 @@ import LiveChargingSession from "./pages/owner/LiveChargingSession";
 
 import "./App.css";
 
+/**
+ * Root Route Redirection:
+ * Authenticated -> Directs automatically to user's permitted dashboard
+ * Unauthenticated -> Directs strictly to /login
+ */
+function RootRedirect() {
+  const { isAuthenticated, role, loading } = useAuth();
+  if (loading) return null;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+
+  const r = (role || "").toUpperCase();
+  if (r === "ADMIN") return <Navigate to="/admin/dashboard" replace />;
+  if (r === "STATION_OWNER" || r === "OWNER") return <Navigate to="/owner/dashboard" replace />;
+  return <Navigate to="/customer/dashboard" replace />;
+}
+
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* PUBLIC AUTH ROUTES */}
+        {/* ==================================================== */}
+        {/* PUBLIC AUTH & SYSTEM ROUTES                          */}
+        {/* ==================================================== */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/owner/login" element={<Login />} />
-        <Route path="/owner/register" element={<Register />} />
-        <Route path="/admin/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/403" element={<Forbidden />} />
+        <Route path="/404" element={<NotFound />} />
+
+        {/* STRICT REDIRECTION: Legacy / duplicate auth URLs route to single /login */}
+        <Route path="/customer/login" element={<Navigate to="/login" replace />} />
+        <Route path="/owner/login" element={<Navigate to="/login" replace />} />
+        <Route path="/admin/login" element={<Navigate to="/login" replace />} />
+        <Route path="/customer/auth" element={<Navigate to="/login" replace />} />
+        <Route path="/owner/auth" element={<Navigate to="/login" replace />} />
+        <Route path="/admin/auth" element={<Navigate to="/login" replace />} />
+        <Route path="/owner/register" element={<Navigate to="/register" replace />} />
 
         {/* CUSTOMER PROTECTED ROUTES */}
         <Route
@@ -493,11 +526,24 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/admin/profile"
+          element={
+            <ProtectedRoute allowedRoles={["ADMIN"]}>
+              <MainLayout>
+                <Profile />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
 
-        {/* DEFAULT FALLBACK ROUTE */}
-        <Route path="/" element={<Navigate to="/customer/dashboard" replace />} />
-        <Route path="*" element={<Navigate to="/customer/dashboard" replace />} />
+        {/* DEFAULT ROOT REDIRECT & 404 CATCH-ALL */}
+        <Route path="/" element={<RootRedirect />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
+
+      {/* Universally Accessible Real-Time AI Copilot */}
+      <VoltBotChatbot />
     </BrowserRouter>
   );
 }

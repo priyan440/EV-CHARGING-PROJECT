@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Zap,
   LayoutDashboard,
@@ -28,6 +28,7 @@ import { useAuth } from "../contexts/AuthContext";
 
 export default function Sidebar({ isOpen, onClose }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { currentUser, role, logout } = useAuth();
 
   const customerLinks = [
@@ -79,11 +80,12 @@ export default function Sidebar({ isOpen, onClose }) {
   let roleTitle = "CUSTOMER PORTAL";
   let badgeColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
 
-  if (role === "STATION_OWNER") {
+  const r = (role || "").toUpperCase();
+  if (r === "STATION_OWNER" || r === "OWNER") {
     currentLinks = ownerLinks;
     roleTitle = "STATION OWNER PORTAL";
     badgeColor = "bg-cyan-500/20 text-cyan-400 border-cyan-500/30";
-  } else if (role === "ADMIN") {
+  } else if (r === "ADMIN") {
     currentLinks = adminLinks;
     roleTitle = "ADMIN COMMAND CENTER";
     badgeColor = "bg-purple-500/20 text-purple-400 border-purple-500/30";
@@ -129,13 +131,29 @@ export default function Sidebar({ isOpen, onClose }) {
         </div>
 
         {/* User Identity Banner */}
-        <div className="px-5 py-3 bg-slate-900/60 border-b border-slate-800 flex items-center justify-between">
-          <div>
-            <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${badgeColor}`}>
-              {roleTitle}
-            </span>
-            <div className="text-xs font-mono font-semibold text-slate-300 mt-1">
-              ID: {currentUser?.counterId || "CUS0001"}
+        <div className="px-4 py-3 bg-slate-900/60 border-b border-slate-800 flex items-center gap-3">
+          {currentUser?.profileImage ? (
+            <img
+              src={currentUser.profileImage}
+              alt={currentUser.name}
+              className="w-9 h-9 rounded-xl object-cover border border-emerald-500/40 shrink-0"
+            />
+          ) : (
+            <div className="w-9 h-9 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs flex items-center justify-center shrink-0">
+              {currentUser?.name ? currentUser.name[0].toUpperCase() : "U"}
+            </div>
+          )}
+          <div className="overflow-hidden">
+            <div className="text-xs font-bold text-slate-100 truncate">
+              {currentUser?.name || "EV User"}
+            </div>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className={`text-[9px] uppercase font-bold px-1.5 py-0.2 rounded border ${badgeColor}`}>
+                {roleTitle}
+              </span>
+              <span className="text-[10px] font-mono text-emerald-400 font-bold">
+                {currentUser?.counterId || "CUS0001"}
+              </span>
             </div>
           </div>
         </div>
@@ -167,8 +185,11 @@ export default function Sidebar({ isOpen, onClose }) {
         {/* Logout Footer */}
         <div className="p-4 border-t border-slate-800/80">
           <button
-            onClick={logout}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-red-400 hover:text-white hover:bg-red-500/10 border border-red-500/20 transition-all"
+            onClick={() => {
+              logout();
+              navigate("/login");
+            }}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-red-400 hover:text-white hover:bg-red-500/10 border border-red-500/20 transition-all cursor-pointer"
           >
             <LogOut size={16} />
             <span>Sign Out</span>

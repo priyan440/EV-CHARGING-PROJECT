@@ -140,9 +140,18 @@ router.get("/ev-stations", async (req, res) => {
   }
 });
 
-// GET /api/stations (Local Platform DB Stations)
+// GET /api/stations (Local Platform DB Stations) OR /api/ev-stations (External)
 router.get("/", async (req, res) => {
   try {
+    if (req.baseUrl && req.baseUrl.includes("ev-stations")) {
+      const externalStations = await fetchOpenChargeMapStations(req.query);
+      return res.json({
+        success: true,
+        count: externalStations.length,
+        source: "Open Charge Map API (countrycode=IN)",
+        data: externalStations,
+      });
+    }
     const stations = await Station.find({});
     res.json({ success: true, count: stations.length, data: stations });
   } catch (err) {

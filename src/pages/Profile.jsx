@@ -126,18 +126,33 @@ function Profile() {
         {/* Account Badge Card */}
         <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-500 text-slate-950 font-black text-xl flex items-center justify-center shadow-inner">
-              {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : "C"}
-            </div>
+            {currentUser.profileImage ? (
+              <img
+                src={currentUser.profileImage}
+                alt={currentUser.name}
+                className="w-14 h-14 rounded-2xl object-cover border-2 border-emerald-500/50 shadow-inner"
+              />
+            ) : (
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500 text-slate-950 font-black text-xl flex items-center justify-center shadow-inner">
+                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : "C"}
+              </div>
+            )}
             <div>
-              <h2 className="text-lg font-black">{currentUser.name}</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-black">{currentUser.name}</h2>
+                {currentUser.authProvider?.includes("google") && (
+                  <span className="px-2 py-0.5 text-[9px] font-mono font-bold bg-blue-500/20 text-blue-400 rounded-full border border-blue-500/30">
+                    Google
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-400">{currentUser.email}</p>
             </div>
           </div>
 
           <div className="p-3 rounded-2xl bg-slate-800 border border-slate-700 text-left sm:text-right">
             <span className="text-[10px] text-slate-400 uppercase font-bold block">
-              Unique Counter ID
+              Unique Customer ID
             </span>
             <span className="font-mono text-2xl font-black text-emerald-400 tracking-wider">
               {currentUser.counterId}

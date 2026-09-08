@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Search,
@@ -11,14 +11,17 @@ import {
   Navigation,
   Menu,
   Zap,
+  LogOut,
+  Database,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useLocation } from "../contexts/LocationContext";
 import { useNotifications } from "../contexts/NotificationContext";
+import { apiService } from "../services/apiService";
 
 export default function Navbar({ onOpenSidebar, isDark, onToggleTheme }) {
   const navigate = useNavigate();
-  const { currentUser, role } = useAuth();
+  const { currentUser, role, logout } = useAuth();
   const { currentLocation, detectLocation, setManualLocation, isLocating } = useLocation();
   const { notifications, getUnreadCount, markAsRead } = useNotifications();
 
@@ -36,6 +39,28 @@ export default function Navbar({ onOpenSidebar, isDark, onToggleTheme }) {
     { city: "Bengaluru", state: "Karnataka", lat: 12.9716, lng: 77.5946 },
     { city: "Hyderabad", state: "Telangana", lat: 17.385, lng: 78.4867 },
   ];
+
+  const [dbOnline, setDbOnline] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const checkDb = async () => {
+      try {
+        const health = await apiService.checkHealth();
+        if (isMounted) {
+          setDbOnline(health?.status === "OK" || health?.services?.database === "ONLINE");
+        }
+      } catch {
+        if (isMounted) setDbOnline(false);
+      }
+    };
+    checkDb();
+    const interval = setInterval(checkDb, 15000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -69,6 +94,25 @@ export default function Navbar({ onOpenSidebar, isDark, onToggleTheme }) {
 
       {/* Right Controls */}
       <div className="flex items-center gap-2 md:gap-3">
+        {/* Live MongoDB Database Status Badge */}
+        <div
+          className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono font-bold border transition ${
+            dbOnline
+              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+              : "bg-amber-500/10 border-amber-500/30 text-amber-400"
+          }`}
+          title={dbOnline ? "Connected to live MongoDB Database on port 5000" : "Connecting to Database..."}
+        >
+          <Database size={13} className={dbOnline ? "text-emerald-400" : "text-amber-400"} />
+          <span className={`w-1.5 h-1.5 rounded-full ${dbOnline ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`} />
+          <span>{dbOnline ? "MongoDB Online" : "Connecting DB"}</span>
+        </div>
+
+        {/* Counter ID Badge */}
+        <div className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-mono text-emerald-400 font-bold">
+          <span className="text-slate-400 text-[10px]">ID:</span>
+          <span>{currentUser?.counterId || "CUS0001"}</span>
+        </div>
         {/* Location Picker */}
         <div className="relative">
           <button
@@ -182,13 +226,21 @@ export default function Navbar({ onOpenSidebar, isDark, onToggleTheme }) {
         <div className="relative">
           <button
             onClick={() => setShowProfileMenu(!showProfileMenu)}
-            className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-900 border border-slate-800 hover:border-emerald-500/40 transition"
+            className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-900 border border-slate-800 hover:border-emerald-500/40 transition cursor-pointer"
           >
-            <div className="w-7 h-7 rounded-lg bg-emerald-500 text-slate-950 font-extrabold text-xs flex items-center justify-center">
-              {currentUser?.name ? currentUser.name[0] : "U"}
-            </div>
+            {currentUser?.profileImage ? (
+              <img
+                src={currentUser.profileImage}
+                alt={currentUser.name}
+                className="w-7 h-7 rounded-lg object-cover border border-emerald-500/40"
+              />
+            ) : (
+              <div className="w-7 h-7 rounded-lg bg-emerald-500 text-slate-950 font-extrabold text-xs flex items-center justify-center">
+                {currentUser?.name ? currentUser.name[0].toUpperCase() : "U"}
+              </div>
+            )}
             <div className="text-left hidden md:block">
-              <div className="text-xs font-bold text-slate-200 leading-tight">
+              <div className="text-xs font-bold text-slate-200 leading-tight truncate max-w-[120px]">
                 {currentUser?.name || "EV User"}
               </div>
               <div className="text-[10px] font-mono text-emerald-400 leading-tight">
@@ -199,20 +251,40 @@ export default function Navbar({ onOpenSidebar, isDark, onToggleTheme }) {
 
           {showProfileMenu && (
             <div className="absolute right-0 mt-2 w-48 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-2 z-50 text-xs">
-              <Link
-                to={role === "ADMIN" ? "/admin/profile" : role === "STATION_OWNER" ? "/owner/profile" : "/customer/profile"}
-                onClick={() => setShowProfileMenu(false)}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white"
+              {(() => {
+                const r = (role || "").toUpperCase();
+                const profilePath = r === "ADMIN" ? "/admin/profile" : r === "STATION_OWNER" || r === "OWNER" ? "/owner/profile" : "/customer/profile";
+                const settingsPath = r === "ADMIN" ? "/admin/settings" : r === "STATION_OWNER" || r === "OWNER" ? "/owner/settings" : "/customer/settings";
+
+                return (
+                  <>
+                    <Link
+                      to={profilePath}
+                      onClick={() => setShowProfileMenu(false)}
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white"
+                    >
+                      <User size={14} /> My Profile
+                    </Link>
+                    <Link
+                      to={settingsPath}
+                      onClick={() => setShowProfileMenu(false)}
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white"
+                    >
+                      <Sun size={14} /> Settings
+                    </Link>
+                  </>
+                );
+              })()}
+              <button
+                onClick={() => {
+                  setShowProfileMenu(false);
+                  logout();
+                  navigate("/login");
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-red-400 hover:bg-red-500/10 hover:text-red-300 transition cursor-pointer"
               >
-                <User size={14} /> My Profile
-              </Link>
-              <Link
-                to={role === "ADMIN" ? "/admin/settings" : role === "STATION_OWNER" ? "/owner/settings" : "/customer/settings"}
-                onClick={() => setShowProfileMenu(false)}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white"
-              >
-                <Sun size={14} /> Settings
-              </Link>
+                <LogOut size={14} /> Sign Out
+              </button>
             </div>
           )}
         </div>

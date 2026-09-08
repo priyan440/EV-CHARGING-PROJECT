@@ -71,6 +71,15 @@ export const apiService = {
     }
   },
 
+  getCounters: async () => {
+    try {
+      const res = await api.get("/auth/counters");
+      return res.data;
+    } catch {
+      return null;
+    }
+  },
+
   // Stations
   getStations: async () => {
     try {

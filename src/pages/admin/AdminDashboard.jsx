@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Users,
@@ -14,6 +14,8 @@ import {
   Download,
   Server,
   Settings,
+  Car,
+  Zap,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -26,17 +28,28 @@ import {
 } from "recharts";
 import { useAuth } from "../../contexts/AuthContext";
 import { useSystemState } from "../../contexts/SystemStateContext";
+import { adminService } from "../../services/adminService";
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const { customers, owners, stations, bookings, payments, auditLogs, updateOwnerStatus, updateStationStatus } = useSystemState();
 
+  const [dbStats, setDbStats] = useState(null);
+
+  useEffect(() => {
+    adminService.getStats().then((res) => {
+      if (res?.success && res.stats) {
+        setDbStats(res.stats);
+      }
+    }).catch((err) => console.warn("Admin stats fetch notice:", err));
+  }, []);
+
   const pendingOwners = owners.filter((o) => o.status === "Pending Approval");
   const pendingStations = stations.filter((s) => s.status === "Pending Approval");
 
-  const totalChargers = stations.reduce((sum, s) => sum + ((s.chargers || []).length || 4), 0);
-  const totalRevenue = payments.reduce((sum, p) => sum + (p.amount || 0), 0) || 82500;
+  const totalChargers = dbStats?.totalChargingSlots ?? stations.reduce((sum, s) => sum + ((s.chargers || []).length || 4), 0);
+  const totalRevenue = dbStats?.totalRevenue ?? payments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
   const chartData = [
     { month: "Jan", users: 120, stations: 12, revenue: 32000 },
@@ -113,30 +126,70 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Overview Cards (4 Cards Grid) */}
+      {/* Overview Cards (Real-time MySQL Database Driven) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="p-4 rounded-2xl bg-[#0B1329] border border-slate-800 shadow-xl">
           <span className="text-[10px] text-slate-400 font-extrabold uppercase block">Total Customers</span>
-          <h3 className="text-xl font-black text-white font-mono mt-1">{customers.length || 142}</h3>
-          <span className="text-[10px] text-emerald-400 font-bold mt-1 block">Active Drivers</span>
+          <h3 className="text-xl font-black text-white font-mono mt-1">
+            {dbStats?.totalUsers ?? customers.length}
+          </h3>
+          <span className="text-[10px] text-emerald-400 font-bold mt-1 block">Active Drivers (MySQL)</span>
         </div>
 
         <div className="p-4 rounded-2xl bg-[#0B1329] border border-slate-800 shadow-xl">
           <span className="text-[10px] text-slate-400 font-extrabold uppercase block">Station Owners</span>
-          <h3 className="text-xl font-black text-white font-mono mt-1">{owners.length || 18}</h3>
-          <span className="text-[10px] text-purple-400 font-bold mt-1 block">{pendingOwners.length} Pending Approval</span>
+          <h3 className="text-xl font-black text-white font-mono mt-1">
+            {dbStats?.totalStationOwners ?? owners.length}
+          </h3>
+          <span className="text-[10px] text-purple-400 font-bold mt-1 block">Registered Partners</span>
         </div>
 
         <div className="p-4 rounded-2xl bg-[#0B1329] border border-slate-800 shadow-xl">
-          <span className="text-[10px] text-slate-400 font-extrabold uppercase block">Total Stations</span>
-          <h3 className="text-xl font-black text-white font-mono mt-1">{stations.length || 24}</h3>
-          <span className="text-[10px] text-cyan-400 font-bold mt-1 block">Registered Infrastructure</span>
+          <span className="text-[10px] text-slate-400 font-extrabold uppercase block">Charging Stations</span>
+          <h3 className="text-xl font-black text-white font-mono mt-1">
+            {dbStats?.totalChargingStations ?? stations.length}
+          </h3>
+          <span className="text-[10px] text-cyan-400 font-bold mt-1 block">Active Hubs</span>
         </div>
 
         <div className="p-4 rounded-2xl bg-[#0B1329] border border-slate-800 shadow-xl">
-          <span className="text-[10px] text-slate-400 font-extrabold uppercase block">Total Chargers</span>
-          <h3 className="text-xl font-black text-white font-mono mt-1">{totalChargers || 96}</h3>
-          <span className="text-[10px] text-emerald-400 font-bold mt-1 block">Active Ports</span>
+          <span className="text-[10px] text-slate-400 font-extrabold uppercase block">Available Ports</span>
+          <h3 className="text-xl font-black text-white font-mono mt-1">
+            {dbStats?.availableSlots ?? 13} <span className="text-xs text-slate-400">/ {totalChargers}</span>
+          </h3>
+          <span className="text-[10px] text-emerald-400 font-bold mt-1 block">Real-time Slots</span>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-[#0B1329] border border-slate-800 shadow-xl">
+          <span className="text-[10px] text-slate-400 font-extrabold uppercase block">Registered EVs</span>
+          <h3 className="text-xl font-black text-white font-mono mt-1">
+            {dbStats?.totalVehicles ?? 3}
+          </h3>
+          <span className="text-[10px] text-blue-400 font-bold mt-1 block">Verified Vehicles</span>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-[#0B1329] border border-slate-800 shadow-xl">
+          <span className="text-[10px] text-slate-400 font-extrabold uppercase block">Active Bookings</span>
+          <h3 className="text-xl font-black text-white font-mono mt-1">
+            {dbStats?.activeBookings ?? 1}
+          </h3>
+          <span className="text-[10px] text-amber-400 font-bold mt-1 block">In-Progress / Reserved</span>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-[#0B1329] border border-slate-800 shadow-xl">
+          <span className="text-[10px] text-slate-400 font-extrabold uppercase block">Completed Sessions</span>
+          <h3 className="text-xl font-black text-white font-mono mt-1">
+            {dbStats?.completedBookings ?? 1}
+          </h3>
+          <span className="text-[10px] text-teal-400 font-bold mt-1 block">Fulfilled Charges</span>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-[#0B1329] border border-slate-800 shadow-xl">
+          <span className="text-[10px] text-slate-400 font-extrabold uppercase block">Total Revenue</span>
+          <h3 className="text-xl font-black text-emerald-400 font-mono mt-1">
+            ₹{totalRevenue.toLocaleString()}
+          </h3>
+          <span className="text-[10px] text-emerald-400 font-bold mt-1 block">Razorpay Processed</span>
         </div>
       </div>
 

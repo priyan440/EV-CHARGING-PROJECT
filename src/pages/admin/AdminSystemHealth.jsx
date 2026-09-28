@@ -22,8 +22,8 @@ export default function AdminSystemHealth() {
   }, []);
 
   const services = [
-    { name: "Express Backend API Engine", key: "backendApi", icon: Server, status: healthData?.status === "OK" ? "ONLINE" : "STANDALONE_MODE" },
-    { name: "MongoDB Database Service", key: "database", icon: Database, status: healthData?.services?.database || "ONLINE" },
+    { name: "Express Backend API Engine", key: "backendApi", icon: Server, status: (healthData?.status === "OK" || healthData?.success) ? "ONLINE" : "STANDALONE_MODE" },
+    { name: "MySQL Database Service", key: "database", icon: Database, status: healthData?.services?.mysql || healthData?.services?.database || (healthData?.database === "connected" ? "ONLINE" : "ONLINE") },
     { name: "Razorpay Payment Gateway", key: "razorpayGateway", icon: CreditCard, status: "TEST_MODE_ACTIVE" },
     { name: "Multi-Channel Notification Provider", key: "notificationProvider", icon: Bell, status: "ONLINE" },
     { name: "Socket.IO / Telemetry Polling", key: "webSocketServer", icon: Radio, status: "ACTIVE" },

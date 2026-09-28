@@ -5,6 +5,7 @@ import { Zap, User, Building2, CheckCircle2, Car } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
 import Toast from "../components/Toast";
+import ThemeToggle from "../components/ThemeToggle";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -201,27 +202,32 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen bg-[#070D1E] text-slate-100 flex items-center justify-center p-4 py-12 relative overflow-hidden font-inter">
+    <div className="min-h-screen bg-slate-100 dark:bg-[#070D1E] text-slate-900 dark:text-slate-100 flex items-center justify-center p-4 py-12 relative overflow-hidden font-inter transition-colors duration-200">
       <Toast
         message={toast.message}
         type={toast.type}
         onClose={() => setToast({ message: "", type: "info" })}
       />
 
-      <div className="w-full max-w-2xl bg-[#0B1329] border border-slate-800 p-8 rounded-3xl shadow-2xl space-y-6 relative z-10">
+      {/* Floating White & Dark Theme Switcher */}
+      <div className="absolute top-5 right-5 z-30">
+        <ThemeToggle showLabel={true} />
+      </div>
+
+      <div className="w-full max-w-2xl bg-white/95 dark:bg-[#0B1329] border border-slate-200 dark:border-slate-800 p-8 rounded-3xl shadow-2xl shadow-slate-300/60 dark:shadow-emerald-950/20 space-y-6 relative z-10 transition-colors duration-200">
         {/* Brand Header */}
         <div className="text-center space-y-2">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-cyan-400 mx-auto flex items-center justify-center shadow-lg shadow-emerald-500/20">
             <Zap size={28} className="text-slate-950 fill-slate-950" />
           </div>
-          <h1 className="text-2xl font-extrabold text-white">Create Account</h1>
-          <p className="text-xs text-slate-400">
+          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">Create Account</h1>
+          <p className="text-xs text-slate-600 dark:text-slate-400">
             Join EV CHARGE PRO as an EV Customer or Charging Station Owner
           </p>
         </div>
 
         {/* Role Tabs */}
-        <div className="grid grid-cols-2 gap-2 bg-slate-900/90 p-1.5 rounded-2xl border border-slate-800 text-xs font-bold">
+        <div className="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-slate-900/90 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs font-bold">
           <button
             type="button"
             onClick={() => {
@@ -232,7 +238,7 @@ export default function Register() {
             className={`py-2.5 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer ${
               roleTab === "CUSTOMER"
                 ? "bg-emerald-500 text-slate-950 font-extrabold shadow"
-                : "text-slate-400 hover:text-white"
+                : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
             }`}
           >
             <User size={16} /> Customer / EV User
@@ -248,7 +254,7 @@ export default function Register() {
             className={`py-2.5 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer ${
               roleTab === "STATION_OWNER"
                 ? "bg-cyan-500 text-slate-950 font-extrabold shadow"
-                : "text-slate-400 hover:text-white"
+                : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
             }`}
           >
             <Building2 size={16} /> EV Station Owner
@@ -257,8 +263,20 @@ export default function Register() {
 
         {/* Google Quick Sign Up for Customers (Rule 12) */}
         {roleTab === "CUSTOMER" && !successInfo && (
-          <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-3">
-            <div className="text-xs font-bold text-slate-300 text-center">
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/80 space-y-3">
+            {(!import.meta.env.VITE_GOOGLE_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID.includes("your_google_client_id")) && (
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-[11px] leading-tight flex items-start gap-2">
+                <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold">Google OAuth Notice:</p>
+                  <p className="text-[10px] text-amber-700/80 dark:text-amber-300/80 mt-0.5">
+                    To use the official popup, add your Google Cloud Client ID to <code className="font-mono bg-amber-500/20 px-1 rounded">.env</code>.
+                    Or click the <strong>Instant Google Sign-Up</strong> button below to test immediately!
+                  </p>
+                </div>
+              </div>
+            )}
+            <div className="text-xs font-bold text-slate-700 dark:text-slate-300 text-center">
               Fast Track: Register with Google Account
             </div>
             <div className="space-y-2.5">
@@ -270,7 +288,7 @@ export default function Register() {
                   shape="pill"
                   size="large"
                   text="signup_with"
-                  width="100%"
+                  width="360"
                 />
               </div>
 
@@ -278,7 +296,7 @@ export default function Register() {
               <button
                 type="button"
                 onClick={() => handleSimulatedGoogleSignup("priyanmahesh09@gmail.com", "Priyan Mahesh")}
-                className="w-full py-2.5 px-4 rounded-full bg-slate-900/90 hover:bg-slate-850 border border-slate-700 hover:border-emerald-500/50 text-slate-300 hover:text-white text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer shadow-sm group"
+                className="w-full py-2.5 px-4 rounded-full bg-white dark:bg-slate-900/90 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-300 dark:border-slate-700 hover:border-emerald-500/50 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer shadow-sm group"
                 title="Instant functional Google registration with priyanmahesh09@gmail.com"
               >
                 <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
@@ -287,28 +305,28 @@ export default function Register() {
                   <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
                   <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
                 </svg>
-                <span>Instant Google Sign-Up: <strong className="text-emerald-400 font-mono">priyanmahesh09@gmail.com</strong></span>
+                <span>Instant Google Sign-Up: <strong className="text-emerald-600 dark:text-emerald-400 font-mono">priyanmahesh09@gmail.com</strong></span>
               </button>
             </div>
             <div className="relative flex py-1 items-center">
-              <div className="flex-grow border-t border-slate-800" />
-              <span className="flex-shrink mx-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest font-mono">
+              <div className="flex-grow border-t border-slate-200 dark:border-slate-800" />
+              <span className="flex-shrink mx-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest font-mono">
                 OR REGISTER WITH PASSWORD
               </span>
-              <div className="flex-grow border-t border-slate-800" />
+              <div className="flex-grow border-t border-slate-200 dark:border-slate-800" />
             </div>
           </div>
         )}
 
         {/* Success Banner */}
         {successInfo ? (
-          <div className="p-6 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-center space-y-4">
-            <CheckCircle2 size={44} className="text-emerald-400 mx-auto" />
-            <h3 className="text-lg font-bold text-white">Registration Successful!</h3>
-            <p className="text-xs text-slate-200 leading-relaxed max-w-md mx-auto">
+          <div className="p-6 rounded-2xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-300 dark:border-emerald-500/40 text-center space-y-4">
+            <CheckCircle2 size={44} className="text-emerald-600 dark:text-emerald-400 mx-auto" />
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Registration Successful!</h3>
+            <p className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed max-w-md mx-auto">
               {successInfo.message}
             </p>
-            <div className="p-3 bg-slate-900 rounded-xl font-mono text-sm font-bold text-emerald-400 inline-block border border-slate-800">
+            <div className="p-3 bg-slate-100 dark:bg-slate-900 rounded-xl font-mono text-sm font-bold text-emerald-600 dark:text-emerald-400 inline-block border border-slate-200 dark:border-slate-800">
               Auto-Generated Counter ID: {successInfo.counterId}
             </div>
             <div>
@@ -323,7 +341,7 @@ export default function Register() {
         ) : (
           <>
             {errorMsg && (
-              <div className="p-3 rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-bold text-center">
+              <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-600 dark:text-red-400 text-xs font-bold text-center">
                 {errorMsg}
               </div>
             )}
@@ -333,7 +351,7 @@ export default function Register() {
               <form onSubmit={handleCustomerSubmit} className="space-y-4 text-xs">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                       Full Name
                     </label>
                     <input
@@ -341,12 +359,12 @@ export default function Register() {
                       placeholder="e.g. Priyan"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-white p-2.5 rounded-xl focus:border-emerald-500 outline-none"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white p-2.5 rounded-xl focus:border-emerald-500 outline-none"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                       Email Address
                     </label>
                     <input
@@ -354,7 +372,7 @@ export default function Register() {
                       placeholder="e.g. priyan@evcharge.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-white p-2.5 rounded-xl focus:border-emerald-500 outline-none"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white p-2.5 rounded-xl focus:border-emerald-500 outline-none"
                       required
                     />
                   </div>
@@ -362,7 +380,7 @@ export default function Register() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                       Mobile Number
                     </label>
                     <input
@@ -370,73 +388,73 @@ export default function Register() {
                       placeholder="9876543210"
                       value={mobile}
                       onChange={(e) => setMobile(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-white p-2.5 rounded-xl font-mono focus:border-emerald-500 outline-none"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white p-2.5 rounded-xl font-mono focus:border-emerald-500 outline-none"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                       Password
                     </label>
                     <input
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-white p-2.5 rounded-xl focus:border-emerald-500 outline-none"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white p-2.5 rounded-xl focus:border-emerald-500 outline-none"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                       Confirm Password
                     </label>
                     <input
                       type="password"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-white p-2.5 rounded-xl focus:border-emerald-500 outline-none"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white p-2.5 rounded-xl focus:border-emerald-500 outline-none"
                       required
                     />
                   </div>
                 </div>
 
                 {/* Vehicle Details */}
-                <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-3">
-                  <div className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-3">
+                  <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
                     <Car size={16} /> EV Vehicle Registration
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">
                         Brand
                       </label>
                       <input
                         type="text"
                         value={brand}
                         onChange={(e) => setBrand(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 text-white p-2 rounded-xl focus:border-emerald-500 outline-none"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white p-2 rounded-xl focus:border-emerald-500 outline-none"
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">
                         Model
                       </label>
                       <input
                         type="text"
                         value={model}
                         onChange={(e) => setModel(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 text-white p-2 rounded-xl focus:border-emerald-500 outline-none"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white p-2 rounded-xl focus:border-emerald-500 outline-none"
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">
                         Reg Number
                       </label>
                       <input
                         type="text"
                         value={vehicleNumber}
                         onChange={(e) => setVehicleNumber(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 text-white p-2 rounded-xl font-mono uppercase font-bold focus:border-emerald-500 outline-none"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white p-2 rounded-xl font-mono uppercase font-bold focus:border-emerald-500 outline-none"
                       />
                     </div>
                   </div>
@@ -454,7 +472,7 @@ export default function Register() {
               <form onSubmit={handleOwnerSubmit} className="space-y-4 text-xs">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                       Owner Name
                     </label>
                     <input
@@ -462,12 +480,12 @@ export default function Register() {
                       placeholder="e.g. Senthil Nathan"
                       value={ownerName}
                       onChange={(e) => setOwnerName(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-white p-2.5 rounded-xl focus:border-cyan-500 outline-none"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white p-2.5 rounded-xl focus:border-cyan-500 outline-none"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                       Business / Company Name
                     </label>
                     <input
@@ -475,7 +493,7 @@ export default function Register() {
                       placeholder="e.g. GreenCharge Infra Pvt Ltd"
                       value={businessName}
                       onChange={(e) => setBusinessName(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-white p-2.5 rounded-xl font-bold focus:border-cyan-500 outline-none"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white p-2.5 rounded-xl font-bold focus:border-cyan-500 outline-none"
                       required
                     />
                   </div>
@@ -483,38 +501,38 @@ export default function Register() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                       Business Email
                     </label>
                     <input
                       type="email"
                       value={ownerEmail}
                       onChange={(e) => setOwnerEmail(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-white p-2.5 rounded-xl focus:border-cyan-500 outline-none"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white p-2.5 rounded-xl focus:border-cyan-500 outline-none"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                       Phone Number
                     </label>
                     <input
                       type="text"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-white p-2.5 rounded-xl font-mono focus:border-cyan-500 outline-none"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white p-2.5 rounded-xl font-mono focus:border-cyan-500 outline-none"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                       Password
                     </label>
                     <input
                       type="password"
                       value={ownerPassword}
                       onChange={(e) => setOwnerPassword(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-white p-2.5 rounded-xl focus:border-cyan-500 outline-none"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white p-2.5 rounded-xl focus:border-cyan-500 outline-none"
                       required
                     />
                   </div>
@@ -522,26 +540,26 @@ export default function Register() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                       Business Address
                     </label>
                     <input
                       type="text"
                       value={businessAddress}
                       onChange={(e) => setBusinessAddress(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-white p-2.5 rounded-xl focus:border-cyan-500 outline-none"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white p-2.5 rounded-xl focus:border-cyan-500 outline-none"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                       GST Number
                     </label>
                     <input
                       type="text"
                       value={gstNumber}
                       onChange={(e) => setGstNumber(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-white p-2.5 rounded-xl font-mono font-bold uppercase focus:border-cyan-500 outline-none"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white p-2.5 rounded-xl font-mono font-bold uppercase focus:border-cyan-500 outline-none"
                       required
                     />
                   </div>
@@ -558,9 +576,9 @@ export default function Register() {
           </>
         )}
 
-        <div className="pt-2 text-center text-xs text-slate-400">
+        <div className="pt-2 text-center text-xs text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-800/80">
           Already registered?{" "}
-          <Link to="/login" className="text-emerald-400 hover:underline font-bold">
+          <Link to="/login" className="text-emerald-600 dark:text-emerald-400 hover:underline font-bold">
             Sign In Here
           </Link>
         </div>

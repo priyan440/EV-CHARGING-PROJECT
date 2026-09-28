@@ -18,6 +18,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
 import Toast from "../components/Toast";
+import ThemeToggle from "../components/ThemeToggle";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -225,15 +226,20 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-[#070D1E] text-slate-100 flex items-center justify-center p-4 relative overflow-hidden font-inter">
+    <div className="min-h-screen bg-slate-100 dark:bg-[#070D1E] text-slate-900 dark:text-slate-100 flex items-center justify-center p-4 relative overflow-hidden font-inter transition-colors duration-200">
       <Toast
         message={toast.message}
         type={toast.type}
         onClose={() => setToast({ message: "", type: "info" })}
       />
 
+      {/* Floating White & Dark Theme Switcher */}
+      <div className="absolute top-5 right-5 z-30">
+        <ThemeToggle showLabel={true} />
+      </div>
+
       {/* Futuristic Ambient Glow & Electric Grid Background */}
-      <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px] opacity-25 pointer-events-none" />
+      <div className="absolute inset-0 bg-[radial-gradient(#94a3b8_1px,transparent_1px)] dark:bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px] opacity-40 dark:opacity-25 pointer-events-none" />
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none animate-pulse delay-700" />
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
@@ -243,21 +249,21 @@ export default function Login() {
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="w-full max-w-md bg-[#0B1329]/95 backdrop-blur-xl border border-emerald-500/30 shadow-2xl shadow-emerald-950/20 p-7 md:p-8 rounded-3xl space-y-6 relative z-10"
+        className="w-full max-w-md bg-white/95 dark:bg-[#0B1329]/95 backdrop-blur-xl border border-slate-200 dark:border-emerald-500/30 shadow-2xl shadow-slate-300/60 dark:shadow-emerald-950/20 p-7 md:p-8 rounded-3xl space-y-6 relative z-10 transition-colors duration-200"
       >
         {/* Brand Header */}
         <div className="text-center space-y-2">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 via-teal-400 to-cyan-400 mx-auto flex items-center justify-center shadow-lg shadow-emerald-500/20 group">
             <Zap size={32} className="text-slate-950 fill-slate-950" />
           </div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-white font-mono">
-            EV CHARGE <span className="text-emerald-400">PRO</span>
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white font-mono">
+            EV CHARGE <span className="text-emerald-500 dark:text-emerald-400">PRO</span>
           </h1>
-          <p className="text-xs text-slate-400 font-medium">
+          <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">
             Smart EV Charging Station Management System
           </p>
           <div className="pt-1">
-            <span className="text-[10px] font-mono font-bold tracking-widest text-emerald-400/90 uppercase px-3 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 inline-block">
+            <span className="text-[10px] font-mono font-bold tracking-widest text-emerald-600 dark:text-emerald-400/90 uppercase px-3 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 inline-block">
               ONE PLATFORM • AUTOMATIC ROLE DETECTION
             </span>
           </div>
@@ -265,7 +271,7 @@ export default function Login() {
 
         {/* Error Banner */}
         {errorMsg && (
-          <div className="p-3.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-xs font-semibold flex items-start gap-2">
+          <div className="p-3.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-600 dark:text-red-400 text-xs font-semibold flex items-start gap-2">
             <AlertCircle size={16} className="shrink-0 mt-0.5" />
             <div className="flex-1 leading-relaxed">{errorMsg}</div>
           </div>
@@ -274,7 +280,7 @@ export default function Login() {
         {/* Unified Login Form (No Role Selector) */}
         <form onSubmit={handlePasswordSubmit} className="space-y-4 text-xs">
           <div>
-            <label className="block font-bold text-slate-300 uppercase tracking-wider mb-2">
+            <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
               Email / Counter ID
             </label>
             <div className="relative">
@@ -284,7 +290,7 @@ export default function Login() {
                 placeholder="Enter Email or Counter ID (e.g. CUS0001, OWN0001, ADM0001)..."
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 text-white text-xs font-mono font-bold rounded-xl pl-10 pr-4 py-3 focus:outline-none focus:border-emerald-500 transition"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-mono font-bold rounded-xl pl-10 pr-4 py-3 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
                 required
               />
             </div>
@@ -292,12 +298,12 @@ export default function Login() {
 
           <div>
             <div className="flex justify-between items-center mb-2">
-              <label className="font-bold text-slate-300 uppercase tracking-wider">
+              <label className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                 Password
               </label>
               <Link
                 to="/forgot-password"
-                className="text-[11px] text-emerald-400 hover:text-emerald-300 font-medium transition"
+                className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline font-medium transition"
               >
                 Forgot Password?
               </Link>
@@ -309,7 +315,7 @@ export default function Login() {
                 placeholder="Enter password..."
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 text-white text-xs rounded-xl pl-10 pr-4 py-3 focus:outline-none focus:border-emerald-500 transition"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-xs rounded-xl pl-10 pr-4 py-3 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
                 required
               />
             </div>
@@ -318,7 +324,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={isLoading || isGoogleAuthenticating}
-            className={`w-full py-3.5 rounded-2xl font-extrabold text-xs uppercase tracking-wider shadow-lg bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 text-slate-950 shadow-emerald-500/25 transition flex items-center justify-center gap-2 cursor-pointer ${
+            className={`w-full py-3.5 rounded-2xl font-extrabold text-xs uppercase tracking-wider shadow-lg bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 shadow-emerald-500/25 transition flex items-center justify-center gap-2 cursor-pointer ${
               isLoading ? "opacity-75 cursor-wait" : ""
             }`}
           >
@@ -334,18 +340,30 @@ export default function Login() {
 
         {/* Divider: OR */}
         <div className="relative flex py-1 items-center">
-          <div className="flex-grow border-t border-slate-800" />
-          <span className="flex-shrink mx-4 text-[11px] font-bold text-slate-500 uppercase tracking-widest font-mono">
+          <div className="flex-grow border-t border-slate-200 dark:border-slate-800" />
+          <span className="flex-shrink mx-4 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest font-mono">
             OR
           </span>
-          <div className="flex-grow border-t border-slate-800" />
+          <div className="flex-grow border-t border-slate-200 dark:border-slate-800" />
         </div>
 
         {/* GOOGLE OAUTH BUTTON CONTAINER */}
         <div className="space-y-3">
+          {(!import.meta.env.VITE_GOOGLE_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID.includes("your_google_client_id")) && (
+            <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-[11px] leading-tight flex items-start gap-2">
+              <AlertCircle size={15} className="shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">Google OAuth Notice:</p>
+                <p className="text-[10px] text-amber-700/80 dark:text-amber-300/80 mt-0.5">
+                  To use the official popup, add your Google Cloud Client ID to <code className="font-mono bg-amber-500/20 px-1 rounded">.env</code>.
+                  Or click the <strong>Instant Google Sign-In</strong> button below to test immediately!
+                </p>
+              </div>
+            </div>
+          )}
           {isGoogleAuthenticating ? (
-            <div className="w-full py-3 px-4 rounded-full bg-slate-900 border border-slate-700 text-slate-200 text-xs font-bold flex items-center justify-center gap-2">
-              <Loader2 size={16} className="animate-spin text-emerald-400" />
+            <div className="w-full py-3 px-4 rounded-full bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-2">
+              <Loader2 size={16} className="animate-spin text-emerald-500" />
               <span>Authenticating with Google...</span>
             </div>
           ) : (
@@ -357,7 +375,7 @@ export default function Login() {
                   theme="filled_black"
                   shape="pill"
                   size="large"
-                  width="100%"
+                  width="360"
                   text="continue_with"
                   logo_alignment="left"
                 />
@@ -367,7 +385,7 @@ export default function Login() {
               <button
                 type="button"
                 onClick={() => handleSimulatedGoogleLogin("priyanmahesh09@gmail.com", "Priyan Mahesh")}
-                className="w-full py-2.5 px-4 rounded-full bg-slate-900/90 hover:bg-slate-850 border border-slate-700 hover:border-emerald-500/50 text-slate-300 hover:text-white text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer shadow-sm group"
+                className="w-full py-2.5 px-4 rounded-full bg-slate-100 dark:bg-slate-900/90 hover:bg-slate-200 dark:hover:bg-slate-850 border border-slate-300 dark:border-slate-700 hover:border-emerald-500/50 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer shadow-sm group"
                 title="Instant functional Google test with priyanmahesh09@gmail.com"
               >
                 <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
@@ -376,7 +394,7 @@ export default function Login() {
                   <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
                   <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
                 </svg>
-                <span>Instant Google Sign-In: <strong className="text-emerald-400 font-mono">priyanmahesh09@gmail.com</strong></span>
+                <span>Instant Google Sign-In: <strong className="text-emerald-600 dark:text-emerald-400 font-mono">priyanmahesh09@gmail.com</strong></span>
               </button>
             </div>
           )}
@@ -386,35 +404,35 @@ export default function Login() {
         </div>
 
         {/* Register Navigation */}
-        <div className="pt-2 text-center text-xs text-slate-400 border-t border-slate-800/80">
+        <div className="pt-2 text-center text-xs text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-800/80">
           Don't have an account?{" "}
           <Link
             to="/register"
-            className="text-emerald-400 hover:underline font-bold transition inline-flex items-center gap-0.5"
+            className="text-emerald-600 dark:text-emerald-400 hover:underline font-bold transition inline-flex items-center gap-0.5"
           >
             Register Account <ArrowRight size={12} />
           </Link>
         </div>
 
         {/* Quick Demo Credentials with 1-Click Dual Login Testing */}
-        <div className="p-3.5 bg-slate-900/80 rounded-2xl border border-slate-800 text-[10px] space-y-2">
+        <div className="p-3.5 bg-slate-50 dark:bg-slate-900/80 rounded-2xl border border-slate-200 dark:border-slate-800 text-[10px] space-y-2">
           <div className="flex items-center justify-between">
-            <div className="text-slate-300 font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-              <ShieldCheck size={14} className="text-emerald-400" /> Test Dual Login (Counter ID or Email)
+            <div className="text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+              <ShieldCheck size={14} className="text-emerald-500 dark:text-emerald-400" /> Test Dual Login (Counter ID or Email)
             </div>
-            <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-              ⚡ LIVE MONGODB
+            <span className="text-[9px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 font-bold">
+              ⚡ LIVE MYSQL
             </span>
           </div>
 
           <div className="space-y-1.5 pt-1">
-            <div className="flex items-center justify-between text-slate-300">
-              <span className="font-bold text-emerald-400">Customer:</span>
+            <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
+              <span className="font-bold text-emerald-600 dark:text-emerald-400">Customer:</span>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => { setIdentifier("CUS0001"); setPassword("password123"); }}
-                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-300 border border-slate-700 font-mono text-[10px] transition cursor-pointer"
+                  className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-300 border border-slate-200 dark:border-slate-700 font-mono text-[10px] transition cursor-pointer font-bold"
                   title="Fill Counter ID: CUS0001"
                 >
                   ID: CUS0001
@@ -422,7 +440,7 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={() => { setIdentifier("priyan@evcharge.com"); setPassword("password123"); }}
-                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-300 border border-slate-700 text-[10px] transition cursor-pointer"
+                  className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-300 border border-slate-200 dark:border-slate-700 text-[10px] transition cursor-pointer font-bold"
                   title="Fill Email: priyan@evcharge.com"
                 >
                   Email: priyan@evcharge.com
@@ -430,13 +448,13 @@ export default function Login() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-slate-300">
-              <span className="font-bold text-cyan-400">Owner:</span>
+            <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
+              <span className="font-bold text-cyan-600 dark:text-cyan-400">Owner:</span>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => { setIdentifier("OWNER0001"); setPassword("ownerpassword"); }}
-                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-cyan-500/20 hover:text-cyan-300 border border-slate-700 font-mono text-[10px] transition cursor-pointer"
+                  className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-cyan-50 dark:hover:bg-cyan-500/20 text-slate-700 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-300 border border-slate-200 dark:border-slate-700 font-mono text-[10px] transition cursor-pointer font-bold"
                   title="Fill Counter ID: OWNER0001"
                 >
                   ID: OWNER0001
@@ -444,7 +462,7 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={() => { setIdentifier("senthil@greencharge.com"); setPassword("ownerpassword"); }}
-                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-cyan-500/20 hover:text-cyan-300 border border-slate-700 text-[10px] transition cursor-pointer"
+                  className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-cyan-50 dark:hover:bg-cyan-500/20 text-slate-700 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-300 border border-slate-200 dark:border-slate-700 text-[10px] transition cursor-pointer font-bold"
                   title="Fill Email: senthil@greencharge.com"
                 >
                   Email: senthil@greencharge.com
@@ -452,13 +470,13 @@ export default function Login() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-slate-300">
-              <span className="font-bold text-purple-400">Admin:</span>
+            <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
+              <span className="font-bold text-purple-600 dark:text-purple-400">Admin:</span>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => { setIdentifier("ADM0001"); setPassword("admin123"); }}
-                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-purple-500/20 hover:text-purple-300 border border-slate-700 font-mono text-[10px] transition cursor-pointer"
+                  className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-500/20 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-300 border border-slate-200 dark:border-slate-700 font-mono text-[10px] transition cursor-pointer font-bold"
                   title="Fill Counter ID: ADM0001"
                 >
                   ID: ADM0001
@@ -466,7 +484,7 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={() => { setIdentifier("admin@evcharge.com"); setPassword("admin123"); }}
-                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-purple-500/20 hover:text-purple-300 border border-slate-700 text-[10px] transition cursor-pointer"
+                  className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-500/20 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-300 border border-slate-200 dark:border-slate-700 text-[10px] transition cursor-pointer font-bold"
                   title="Fill Email: admin@evcharge.com"
                 >
                   Email: admin@evcharge.com

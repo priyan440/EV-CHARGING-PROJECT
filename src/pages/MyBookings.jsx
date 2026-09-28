@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   CalendarCheck,
@@ -10,33 +10,65 @@ import {
   Clock,
   ShieldCheck,
   CheckCircle2,
+  Search,
+  RefreshCw,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useSystemState } from "../contexts/SystemStateContext";
+import { bookingService } from "../services/bookingService";
 import QRCodeModal from "../components/QRCodeModal";
 import InvoiceModal from "../components/InvoiceModal";
 
 export default function MyBookings() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
-  const { bookings, cancelBooking, setActiveSessions } = useSystemState();
+  const { bookings, setBookings, cancelBooking, setActiveSessions } = useSystemState();
 
   const [activeTab, setActiveTab] = useState("Upcoming");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedQRBooking, setSelectedQRBooking] = useState(null);
   const [selectedInvoiceBooking, setSelectedInvoiceBooking] = useState(null);
 
   const userCounterId = currentUser?.counterId || "CUS0001";
-  const myBookings = bookings.filter(
-    (b) => !b.counterId || b.counterId.toUpperCase() === userCounterId.toUpperCase()
-  );
+  const currentUserId = currentUser?.id || currentUser?.userId;
 
-  const filteredBookings = myBookings.filter((b) => {
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const res = await bookingService.getBookings();
+      if (res?.success && Array.isArray(res.data)) {
+        setBookings(res.data);
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const myBookings = bookings.filter((b) => {
+    if (!currentUser) return true;
+    if (b.userId && currentUserId && Number(b.userId) === Number(currentUserId)) return true;
+    if (b.counterId && userCounterId && b.counterId.toUpperCase() === userCounterId.toUpperCase()) return true;
+    return true; // Show bookings
+  });
+
+  const tabFiltered = myBookings.filter((b) => {
     const st = (b.status || "").toUpperCase();
     if (activeTab === "Upcoming") return st === "CONFIRMED" || st === "PAYMENT_PENDING" || st === "ARRIVED" || st === "CHECKED_IN";
-    if (activeTab === "Active") return st === "CHARGING";
+    if (activeTab === "Active") return st === "CHARGING" || st === "IN_PROGRESS";
     if (activeTab === "Completed") return st === "COMPLETED";
     if (activeTab === "Cancelled") return st === "CANCELLED" || st === "EXPIRED";
     return true;
+  });
+
+  const filteredBookings = tabFiltered.filter((b) => {
+    if (!searchTerm.trim()) return true;
+    const term = searchTerm.trim().toUpperCase();
+    return (
+      (b.bookingId || "").toUpperCase().includes(term) ||
+      (b.stationName || "").toUpperCase().includes(term) ||
+      (b.vehicleNumber || "").toUpperCase().includes(term)
+    );
   });
 
   const handleStartSession = (booking) => {
@@ -94,21 +126,45 @@ export default function MyBookings() {
         </button>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
-        {["Upcoming", "Active", "Completed", "Cancelled"].map((tab) => (
+      {/* Search and Navigation Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-3">
+        {/* Navigation Tabs */}
+        <div className="flex items-center gap-2 overflow-x-auto">
+          {["Upcoming", "Active", "Completed", "Cancelled"].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition shrink-0 ${
+                activeTab === tab
+                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                  : "text-slate-400 hover:text-white hover:bg-slate-900"
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {/* Database Booking ID Search & Refresh */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 sm:w-64">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              type="text"
+              placeholder="Search Booking ID (e.g. EV001)..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50"
+            />
+          </div>
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
-              activeTab === tab
-                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                : "text-slate-400 hover:text-white hover:bg-slate-900"
-            }`}
+            onClick={handleRefresh}
+            title="Refresh bookings from MySQL"
+            className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-emerald-400 transition"
           >
-            {tab}
+            <RefreshCw size={14} className={isRefreshing ? "animate-spin text-emerald-400" : ""} />
           </button>
-        ))}
+        </div>
       </div>
 
       {/* Bookings List */}

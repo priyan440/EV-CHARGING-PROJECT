@@ -17,14 +17,19 @@ const DEFAULT_LOCATION = {
  * Haversine formula to calculate distance in km between 2 lat/lng points
  */
 export function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
-  if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+  const latNum1 = parseFloat(lat1);
+  const lonNum1 = parseFloat(lon1);
+  const latNum2 = parseFloat(lat2);
+  const lonNum2 = parseFloat(lon2);
+  if (isNaN(latNum1) || isNaN(lonNum1) || isNaN(latNum2) || isNaN(lonNum2)) return null;
+
   const R = 6371; // Earth radius in km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const dLat = ((latNum2 - latNum1) * Math.PI) / 180;
+  const dLon = ((lonNum2 - lonNum1) * Math.PI) / 180;
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
+    Math.cos((latNum1 * Math.PI) / 180) *
+      Math.cos((latNum2 * Math.PI) / 180) *
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
@@ -33,15 +38,32 @@ export function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
 
 export function LocationProvider({ children }) {
   const [currentLocation, setCurrentLocation] = useState(() => {
-    const saved = localStorage.getItem("ev_user_location");
-    return saved ? JSON.parse(saved) : DEFAULT_LOCATION;
+    try {
+      const saved = localStorage.getItem("ev_user_location");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.isGps || parsed?.isManual) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return {
+      isGps: false,
+      isManual: false,
+      city: null,
+      state: null,
+      latitude: null,
+      longitude: null,
+    };
   });
 
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState(null);
 
   useEffect(() => {
-    localStorage.setItem("ev_user_location", JSON.stringify(currentLocation));
+    if (currentLocation?.isGps || currentLocation?.isManual) {
+      localStorage.setItem("ev_user_location", JSON.stringify(currentLocation));
+    }
   }, [currentLocation]);
 
   const detectLocation = () => {
@@ -57,18 +79,18 @@ export function LocationProvider({ children }) {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
-        setCurrentLocation((prev) => ({
-          ...prev,
+        setCurrentLocation({
           latitude,
           longitude,
           city: "GPS Location",
           address: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
           isGps: true,
-        }));
+          isManual: false,
+        });
         setIsLocating(false);
       },
       (error) => {
-        setLocationError("Location permission denied or unavailable. Using manual location.");
+        setLocationError("Location permission denied or unavailable.");
         setIsLocating(false);
       },
       { enableHighAccuracy: true, timeout: 10000 }
@@ -81,14 +103,23 @@ export function LocationProvider({ children }) {
       state: locationData.state || "Tamil Nadu",
       address: locationData.address || `${locationData.city}`,
       pincode: locationData.pincode || "600001",
-      latitude: locationData.latitude || 13.0827,
-      longitude: locationData.longitude || 80.2707,
+      latitude: parseFloat(locationData.latitude) || null,
+      longitude: parseFloat(locationData.longitude) || null,
       isGps: false,
+      isManual: true,
     });
   };
 
   const getDistanceToStation = (station) => {
-    if (!station || !station.latitude || !station.longitude) return 0;
+    if (!currentLocation?.latitude || !currentLocation?.longitude) {
+      return null;
+    }
+    if (!currentLocation?.isGps && !currentLocation?.isManual) {
+      return null;
+    }
+    if (!station || !station.latitude || !station.longitude) {
+      return null;
+    }
     return calculateHaversineDistance(
       currentLocation.latitude,
       currentLocation.longitude,
@@ -98,6 +129,7 @@ export function LocationProvider({ children }) {
   };
 
   const estimateTravelTimeMinutes = (distanceKm) => {
+    if (distanceKm == null || isNaN(distanceKm)) return null;
     // Average urban speed ~ 25 km/h -> 2.4 min per km
     return Math.max(3, Math.round(distanceKm * 2.4));
   };

@@ -56,15 +56,22 @@ export function decodeGoogleCredential(credential) {
 export function normalizeUser(user) {
   if (!user) return null;
 
+  const rawRole = (user.role || "").toUpperCase();
+  const normalizedRole = rawRole === "USER" ? "CUSTOMER" : rawRole || "CUSTOMER";
+
   return {
     id: user.counterId || user.id || user._id,
     counterId: user.counterId || user.id,
+    userId: user.id || user.userId,
+    token: user.token || localStorage.getItem("ev_token") || null,
     googleId: user.googleId || null,
     name: user.name || user.ownerName || "EV User",
     email: (user.email || "").toLowerCase(),
     mobile: user.mobile || user.phone || "",
+    phone: user.phone || user.mobile || "",
     profileImage: user.profileImage || user.picture || null,
-    role: user.role || "CUSTOMER",
+    role: normalizedRole,
+    rawRole: user.role,
     status: user.status || "Active",
     authProvider: user.authProvider || "password",
     vehicles: user.vehicles || [],
@@ -122,6 +129,9 @@ export const authService = {
     try {
       const backendRes = await apiService.login({ identifier, password });
       if (backendRes && backendRes.success && backendRes.user) {
+        if (backendRes.token) {
+          localStorage.setItem("ev_token", backendRes.token);
+        }
         const normalized = normalizeUser({ ...backendRes.user, token: backendRes.token });
         setCurrentUserInStorage(normalized);
 
@@ -686,6 +696,7 @@ export const authService = {
    * Sign Out & Clear Session
    */
   logoutUser: () => {
+    localStorage.removeItem("ev_token");
     setCurrentUserInStorage(null);
   },
 };

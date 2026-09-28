@@ -15,6 +15,7 @@ import NotFound from "./pages/NotFound";
 // Customer Pages
 import CustomerDashboard from "./pages/CustomerDashboard";
 import FindStations from "./pages/FindStations";
+import EVMapPage from "./pages/EVMapPage";
 import StationDetails from "./pages/StationDetails";
 import Booking from "./pages/Booking";
 import MyBookings from "./pages/MyBookings";
@@ -49,6 +50,17 @@ import AdminSystemHealth from "./pages/admin/AdminSystemHealth";
 import BookingVerify from "./pages/BookingVerify";
 import OwnerScanner from "./pages/owner/OwnerScanner";
 import LiveChargingSession from "./pages/owner/LiveChargingSession";
+
+// Innovative Features 11-16 Pages
+import OwnerAIDashboard from "./pages/owner/OwnerAIDashboard";
+import OwnerDemandForecast from "./pages/owner/OwnerDemandForecast";
+import VehicleHealth from "./pages/VehicleHealth";
+import SecurityCenter from "./pages/SecurityCenter";
+import EmergencyAssistance from "./pages/EmergencyAssistance";
+import ChargingSimulator from "./pages/ChargingSimulator";
+
+// Public Welcome / Landing Page
+import Welcome from "./pages/Welcome";
 
 import "./App.css";
 
@@ -112,6 +124,36 @@ function App() {
           }
         />
         <Route
+          path="/customer/map"
+          element={
+            <ProtectedRoute allowedRoles={["CUSTOMER"]}>
+              <MainLayout>
+                <EVMapPage />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/map"
+          element={
+            <ProtectedRoute allowedRoles={["CUSTOMER"]}>
+              <MainLayout>
+                <EVMapPage />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/ev-map"
+          element={
+            <ProtectedRoute allowedRoles={["CUSTOMER"]}>
+              <MainLayout>
+                <EVMapPage />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/customer/stations/:id"
           element={
             <ProtectedRoute allowedRoles={["CUSTOMER"]}>
@@ -127,6 +169,26 @@ function App() {
             <ProtectedRoute allowedRoles={["CUSTOMER"]}>
               <MainLayout>
                 <Booking />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/booking"
+          element={
+            <ProtectedRoute allowedRoles={["CUSTOMER"]}>
+              <MainLayout>
+                <Booking />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/find-stations"
+          element={
+            <ProtectedRoute allowedRoles={["CUSTOMER"]}>
+              <MainLayout>
+                <FindStations />
               </MainLayout>
             </ProtectedRoute>
           }
@@ -231,6 +293,62 @@ function App() {
         <Route path="/payments" element={<Navigate to="/customer/payments" replace />} />
         <Route path="/profile" element={<Navigate to="/customer/profile" replace />} />
         <Route path="/settings" element={<Navigate to="/customer/settings" replace />} />
+
+        {/* INNOVATIVE FEATURES: CUSTOMER ROUTES */}
+        <Route
+          path="/customer/vehicle-health"
+          element={
+            <ProtectedRoute allowedRoles={["CUSTOMER"]}>
+              <MainLayout>
+                <VehicleHealth />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/user/vehicle-health" element={<Navigate to="/customer/vehicle-health" replace />} />
+        <Route path="/vehicle-health" element={<Navigate to="/customer/vehicle-health" replace />} />
+
+        <Route
+          path="/customer/emergency-assistance"
+          element={
+            <ProtectedRoute allowedRoles={["CUSTOMER"]}>
+              <MainLayout>
+                <EmergencyAssistance />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/emergency-assistance"
+          element={
+            <ProtectedRoute allowedRoles={["CUSTOMER"]}>
+              <MainLayout>
+                <EmergencyAssistance />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/customer/charging-simulator"
+          element={
+            <ProtectedRoute allowedRoles={["CUSTOMER"]}>
+              <MainLayout>
+                <ChargingSimulator />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/charging-simulator"
+          element={
+            <ProtectedRoute allowedRoles={["CUSTOMER"]}>
+              <MainLayout>
+                <ChargingSimulator />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
 
         {/* STATION OWNER PROTECTED ROUTES */}
         <Route
@@ -360,6 +478,28 @@ function App() {
             <ProtectedRoute allowedRoles={["STATION_OWNER"]}>
               <MainLayout>
                 <Settings />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* INNOVATIVE FEATURES: STATION OWNER AI ROUTES */}
+        <Route
+          path="/owner/ai-dashboard"
+          element={
+            <ProtectedRoute allowedRoles={["STATION_OWNER"]}>
+              <MainLayout>
+                <OwnerAIDashboard />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/owner/demand-forecast"
+          element={
+            <ProtectedRoute allowedRoles={["STATION_OWNER"]}>
+              <MainLayout>
+                <OwnerDemandForecast />
               </MainLayout>
             </ProtectedRoute>
           }
@@ -537,8 +677,24 @@ function App() {
           }
         />
 
-        {/* DEFAULT ROOT REDIRECT & 404 CATCH-ALL */}
-        <Route path="/" element={<RootRedirect />} />
+        {/* UNIVERSAL ADVANCED SECURITY CENTER (CUSTOMER, OWNER, ADMIN) */}
+        <Route
+          path="/security"
+          element={
+            <ProtectedRoute allowedRoles={["CUSTOMER", "STATION_OWNER", "ADMIN"]}>
+              <MainLayout>
+                <SecurityCenter />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/customer/security" element={<Navigate to="/security" replace />} />
+        <Route path="/owner/security" element={<Navigate to="/security" replace />} />
+        <Route path="/admin/security" element={<Navigate to="/security" replace />} />
+
+        {/* PUBLIC WELCOME / LANDING PAGE & 404 CATCH-ALL */}
+        <Route path="/" element={<Welcome />} />
+        <Route path="/welcome" element={<Welcome />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
 

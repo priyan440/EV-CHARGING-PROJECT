@@ -1,97 +1,169 @@
-# COMPLETE EV CHARGING STATION MANAGEMENT SYSTEM
+# EV CHARGING STATION MANAGEMENT SYSTEM (FULL-STACK MYSQL)
 
-A production-grade, multi-role EV Charging Ecosystem built with React, Vite, Tailwind CSS, Leaflet Maps, Recharts, Node.js, Express, and MongoDB.
+A production-grade, multi-role EV Charging Ecosystem built with **React**, **Node.js**, **Express**, **MySQL Database**, **JWT Authentication**, and **Razorpay Test Mode Integration**.
 
 ---
 
-## 🚀 KEY SYSTEM FEATURES
+## 🏗️ SYSTEM ARCHITECTURE
 
-### 1. Multi-Role Ecosystem & Role-Based Access Control (RBAC)
-- **Customer / EV User** (`/customer/*`): Registration, vehicle setup, location detection, interactive Leaflet station map, slot booking, live charging session simulation, invoices, payments, reviews, and complaints.
-- **EV Station Owner** (`/owner/*`): Registration (pending Admin approval), station creation (`STA001`), charger setup (`CHG0001`), slot availability control, live session monitoring, revenue analytics, and maintenance ticketing (`MT000001`).
-- **System Admin** (`/admin/*`): User & station owner management, station approval workflows, global map view, platform revenue breakdown, audit log tracking, and CSV reports generation.
-
-### 2. Standardized Counter ID Architecture
-Sequential auto-incrementing unique IDs are enforced system-wide:
-- **Customer**: `CUS0001`, `CUS0002`
-- **Station Owner**: `OWNER0001`
-- **Station**: `STA001`
-- **Charger**: `CHG0001`
-- **Booking**: `BK000001`
-- **Session**: `SES000001`
-- **Payment**: `PAY000001`
-- **Invoice**: `INV000001`
-- **Maintenance Ticket**: `MT000001`
-- **Complaint Ticket**: `CMP000001`
-
-### 3. Interactive Leaflet Map & Location Services
-- OpenStreetMap + Leaflet integration with color-coded status markers:
-  - 🟢 **Green**: Available
-  - 🟡 **Yellow**: Limited / Busy
-  - 🔴 **Red**: Fully Occupied
-  - 🔘 **Gray**: Offline / Maintenance
-- Split-screen list & map interface, distance calculation (Haversine formula), ETA estimation, connector filters (CCS2, Type 2, CHAdeMO), price sorting, and rating filters.
+```
+React Frontend (Port 5173)
+        ↓
+    REST APIs (Axios)
+        ↓
+Node.js + Express Backend (Port 5000)
+        ↓
+MySQL Database: ev_charging_db (Port 3306)
+```
 
 ---
 
 ## 🔑 TEST CREDENTIALS & DEMO ACCOUNTS
 
-| Role | Identifier / Email | Password | Counter ID | Default Dashboard Route |
+| Role | Email | Password | Counter ID | Dashboard Route |
 | :--- | :--- | :--- | :--- | :--- |
-| **Customer** | `CUS0001` or `priyan@evcharge.com` | `password123` | `CUS0001` | `/customer/dashboard` |
-| **Customer 2** | `CUS0002` or `rajesh@evcharge.com` | `password123` | `CUS0002` | `/customer/dashboard` |
-| **Station Owner** | `OWNER0001` or `senthil@greencharge.com` | `ownerpassword` | `OWNER0001` | `/owner/dashboard` |
-| **Admin** | `ADM0001` or `admin@evcharge.com` | `admin123` | `ADM0001` | `/admin/dashboard` |
+| **User / Customer** | `user@evcharge.com` | `user123` | `CUS0003` | `/customer/dashboard` |
+| **Station Owner** | `owner@evcharge.com` | `owner123` | `OWNER0002` | `/owner/dashboard` |
+| **Administrator** | `admin@evcharge.com` | `admin123` | `ADM0001` | `/admin/dashboard` |
 
 ---
 
-## 🛠️ INSTALLATION & RUNNING INSTRUCTIONS
+## 🛠️ COMPLETE SETUP & RUNNING INSTRUCTIONS
 
-### 1. Run Frontend Application
-```bash
-# Install dependencies
-npm install
+### Step 1: Install Node.js & MySQL
+- Ensure **Node.js** (v18+) is installed: `node -v`
+- Ensure **MySQL Server** (v8.0+) is installed and running on port `3306`.
 
-# Run Vite local dev server
-npm run dev
+### Step 2: Create MySQL Database & Import Schema
+1. Log into your MySQL console or MySQL Workbench:
+   ```bash
+   mysql -u root -p
+   ```
+2. Import the complete database schema with seed data:
+   ```bash
+   mysql -u root -p < backend/database/ev_charging_db.sql
+   ```
+   Or execute `backend/database/ev_charging_db.sql` directly in MySQL Workbench / phpMyAdmin.
+   This creates the database `ev_charging_db` with all 7 related tables:
+   - `users`
+   - `vehicles`
+   - `charging_stations`
+   - `charging_slots`
+   - `bookings`
+   - `payments`
+   - `login_activity`
+
+### Step 3: Configure Environment Variables
+Verify `backend/.env`:
+```env
+PORT=5000
+NODE_ENV=development
+CLIENT_ORIGINS=http://localhost:5173,http://localhost:3000
+
+# MySQL Database Configuration
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=YOUR_MYSQL_PASSWORD
+DB_NAME=ev_charging_db
+DB_PORT=3306
+
+# Authentication Secret
+JWT_SECRET=YOUR_SECURE_JWT_SECRET
+
+# Razorpay Test Mode Credentials
+RAZORPAY_KEY_ID=YOUR_RAZORPAY_KEY_ID
+RAZORPAY_KEY_SECRET=YOUR_RAZORPAY_KEY_SECRET
 ```
-Open `http://localhost:5173` in your browser.
 
-### 2. Run Backend API Server (Optional Full-Stack Mode)
+### Step 4: Run the Application
+
+#### Option A: Run Both Backend & Frontend Simultaneously (Recommended)
+From the project root directory:
 ```bash
-# Navigate to backend directory
+npm start
+```
+*(Runs concurrently: backend on `http://localhost:5000` and Vite frontend on `http://localhost:5173`)*
+
+#### Option B: Run in Separate Terminals
+
+**Terminal 1 (Backend API Server):**
+```bash
 cd backend
-
-# Install backend dependencies
 npm install
-
-# (Optional) Seed initial MongoDB database
-npm run seed
-
-# Run backend REST API server
 npm run dev
 ```
-The backend API server runs at `http://localhost:5000/api`.
+Backend API will be running at `http://localhost:5000`.
+Health check: `http://localhost:5000/api/health`.
 
-> **Note**: The frontend is built with a zero-crash hybrid service layer (`apiService`). It operates smoothly both in standalone simulated mode and when connected to a live MongoDB backend server.
+**Terminal 2 (Frontend React App):**
+```bash
+npm install
+npm run dev
+```
+Frontend application will be accessible at `http://localhost:5173`.
 
 ---
 
-## 🛣️ ROUTE MAP & API ENDPOINTS
+## 📡 REST API ENDPOINTS
 
-### Frontend Routes:
-- Public: `/login`, `/register`, `/owner/login`, `/admin/login`
-- Customer: `/customer/dashboard`, `/customer/stations`, `/customer/stations/:id`, `/customer/book`, `/customer/bookings`, `/customer/live-charging`, `/customer/history`, `/customer/payments`, `/customer/vehicles`, `/customer/reviews`, `/customer/complaints`, `/customer/profile`, `/customer/settings`
-- Station Owner: `/owner/dashboard`, `/owner/stations`, `/owner/chargers`, `/owner/bookings`, `/owner/sessions`, `/owner/revenue`, `/owner/maintenance`, `/owner/reviews`
-- Admin: `/admin/dashboard`, `/admin/owners`, `/admin/stations`, `/admin/chargers`, `/admin/users`, `/admin/bookings`, `/admin/sessions`, `/admin/payments`, `/admin/maintenance`, `/admin/reports`, `/admin/analytics`, `/admin/audit-logs`
+### Health Check
+- `GET /api/health` — Checks Express and MySQL live connectivity.
 
-### Backend REST Endpoints:
-- `POST /api/auth/login`
-- `POST /api/auth/register-customer`
-- `POST /api/auth/register-owner`
-- `GET /api/stations`
-- `POST /api/stations`
-- `GET /api/chargers`
-- `POST /api/bookings`
-- `GET /api/payments`
-- `GET /api/health`
+### Authentication (`/api/auth`)
+- `POST /api/auth/register` — Register User or Station Owner (hashes password with bcrypt).
+- `POST /api/auth/register-customer` — Customer registration.
+- `POST /api/auth/register-owner` — Station Owner registration.
+- `POST /api/auth/login` — Login with Email or Counter ID (`CUS0003`, `OWNER0002`, `ADM0001`).
+- `GET /api/auth/me` — Authenticated user profile and vehicles.
+
+### Vehicles (`/api/vehicles`)
+- `GET /api/vehicles` — User's registered vehicles.
+- `GET /api/vehicles/:id` — Single vehicle details.
+- `POST /api/vehicles` — Add new vehicle to MySQL.
+- `PUT /api/vehicles/:id` — Update vehicle details.
+- `DELETE /api/vehicles/:id` — Remove vehicle from MySQL.
+
+### Charging Stations (`/api/stations`)
+- `GET /api/stations` — All platform stations from MySQL with available slots.
+- `GET /api/stations/:id` — Station details with slots.
+- `GET /api/stations/owner/my-stations` — Stations owned by authenticated owner.
+- `POST /api/stations` — Create station (Owner / Admin).
+- `PUT /api/stations/:id` — Update station.
+- `DELETE /api/stations/:id` — Delete station.
+- `GET /api/ev-stations` — External Open Charge Map stations.
+
+### Charging Slots (`/api/slots`)
+- `GET /api/slots/station/:stationId` — Slots for station.
+- `GET /api/slots/:id` — Single slot.
+- `POST /api/slots` — Add slot to station.
+- `PUT /api/slots/:id` — Edit slot.
+- `PATCH /api/slots/:id/status` — Change slot status (`AVAILABLE`, `OCCUPIED`, `RESERVED`).
+- `DELETE /api/slots/:id` — Delete slot.
+
+### Bookings (`/api/bookings`)
+- `POST /api/bookings` — Create transactional booking with slot conflict prevention and `EVxxx` format ID.
+- `GET /api/bookings` — Filtered bookings by user / owner / admin.
+- `GET /api/bookings/:bookingId` — Search booking by ID (e.g. `EV001`).
+- `PUT /api/bookings/:bookingId` — Update status / cancel booking and release slot back to `AVAILABLE`.
+- `DELETE /api/bookings/:bookingId` — Cancel booking.
+
+### Payments (`/api/payments`)
+- `POST /api/payments/create-order` — Create Razorpay test order.
+- `POST /api/payments/verify` — Verify Razorpay signature and persist in MySQL `payments` table.
+- `POST /api/payments/refund` — Issue refund.
+- `GET /api/payments` — Payment history from MySQL.
+
+### Admin Dashboard (`/api/admin`)
+- `GET /api/admin/stats` — Real MySQL aggregation for Users, Owners, Stations, Slots, Bookings, and Revenue.
+- `GET /api/admin/users` — List all users with vehicle counts.
+- `GET /api/admin/owners` — List all owners with station counts.
+- `PUT /api/admin/users/:id/role` — Update user role.
+
+---
+
+## 🔒 SECURITY & VALIDATION FEATURES
+1. **bcrypt Password Hashing**: Passwords stored as one-way salt hashes in MySQL.
+2. **JWT Authentication**: JSON Web Tokens with 7-day expiration and secret protection.
+3. **Double Booking Prevention**: MySQL transactional checks prevent overlapping bookings on the same slot.
+4. **Parameterized SQL Queries**: All queries execute via `mysql2/promise` with prepared statement parameterization to prevent SQL injection.
+5. **CORS & Environment Variables**: No hardcoded database credentials or secrets.

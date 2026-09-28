@@ -27,28 +27,32 @@ export default function CustomerDashboard() {
   const { currentLocation, detectLocation, getDistanceToStation, estimateTravelTimeMinutes } = useLocation();
   const { stations, bookings, activeSessions } = useSystemState();
 
-  const userCounterId = currentUser?.counterId || "CUS0002";
+  const userCounterId = currentUser?.counterId || "CUS0003";
+  const currentUserId = currentUser?.id || currentUser?.userId;
   const userName = currentUser?.name || "Priyan";
 
-  // Registered Vehicle details
+  // Registered Vehicle details from MySQL profile
   const primaryVehicle = currentUser?.vehicles?.[0] || currentUser?.vehicle || {
-    number: "TN69AZ7708",
-    brand: "Tata",
-    model: "Nexon EV",
+    number: "TN58AB1234",
+    brand: "Tata Motors",
+    model: "Nexon EV Max",
     batteryCapacity: 40.5,
     batteryPercentage: 65,
   };
 
-  // User Bookings
+  // User Bookings from MySQL
   const myBookings = bookings.filter(
-    (b) => b.counterId?.toUpperCase() === userCounterId.toUpperCase()
+    (b) =>
+      (currentUserId && b.userId && Number(b.userId) === Number(currentUserId)) ||
+      (b.counterId && b.counterId.toUpperCase() === userCounterId.toUpperCase()) ||
+      (!b.userId && !b.counterId)
   );
 
   const nextSession = myBookings.find(
-    (b) => b.status === "Confirmed" || b.status === "Arrived"
+    (b) => b.status === "Confirmed" || b.status === "CONFIRMED" || b.status === "Arrived"
   );
 
-  const totalSpent = myBookings.reduce((sum, b) => sum + (b.totalAmount || b.price || 0), 0);
+  const totalSpent = myBookings.reduce((sum, b) => sum + (b.totalAmount || b.price || b.amount || 0), 0);
 
   // Active charging session
   const currentLiveSession = activeSessions.find(

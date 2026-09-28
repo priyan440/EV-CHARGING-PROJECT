@@ -84,7 +84,7 @@ export default function RazorpayCheckoutModal({ booking, onClose, onSuccess }) {
           const verifyRes = await apiService.verifyRazorpayPayment({
             razorpay_order_id: response.razorpay_order_id || orderId,
             razorpay_payment_id: response.razorpay_payment_id,
-            razorpay_signature: response.razorpay_signature || "test_verified_signature",
+            razorpay_signature: response.razorpay_signature,
             bookingId: booking.bookingId,
           });
 
@@ -93,7 +93,7 @@ export default function RazorpayCheckoutModal({ booking, onClose, onSuccess }) {
               booking.bookingId,
               response.razorpay_payment_id,
               response.razorpay_order_id || orderId,
-              response.razorpay_signature || "test_verified_signature"
+              response.razorpay_signature
             );
 
             setPaymentResult({
@@ -139,32 +139,9 @@ export default function RazorpayCheckoutModal({ booking, onClose, onSuccess }) {
         });
         rzp.open();
       } else {
-        // Fallback simulation if Razorpay JS SDK fails to load from CDN
-        setTimeout(async () => {
-          const simPaymentId = `pay_test_${Date.now().toString().slice(-8)}`;
-          const verifyRes = await apiService.verifyRazorpayPayment({
-            razorpay_order_id: orderId,
-            razorpay_payment_id: simPaymentId,
-            razorpay_signature: "test_verified_signature",
-            bookingId: booking.bookingId,
-          });
-
-          confirmBookingPayment(booking.bookingId, simPaymentId, orderId, "test_verified_signature");
-
-          setPaymentResult({
-            paymentId: `PAY${Date.now().toString().slice(-6)}`,
-            razorpayPaymentId: simPaymentId,
-            razorpayOrderId: orderId,
-            bookingId: booking.bookingId,
-            amount: booking.totalAmount || 416,
-            invoiceId: booking.invoiceId || `INV${Date.now().toString().slice(-6)}`,
-            status: "CAPTURED",
-            date: new Date().toLocaleDateString(),
-          });
-          setPaymentStatus("SUCCESS");
-          setLoading(false);
-          if (onSuccess) onSuccess(verifyRes);
-        }, 1200);
+        setLoading(false);
+        setPaymentStatus("FAILED");
+        setErrorMsg("Razorpay Checkout SDK is unavailable or failed to load. Please check your internet connection.");
       }
     } catch (err) {
       console.error("Razorpay Payment Process Error:", err);

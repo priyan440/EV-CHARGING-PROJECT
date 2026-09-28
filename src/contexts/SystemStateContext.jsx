@@ -14,6 +14,9 @@ import {
 } from "../utils/storage";
 import { getNextBookingId, getNextPaymentId, getNextInvoiceId, getNextStationId, getNextChargerId } from "../utils/idGenerator";
 import { apiService } from "../services/apiService";
+import { stationService } from "../services/stationService";
+import { bookingService } from "../services/bookingService";
+import { paymentService } from "../services/paymentService";
 
 const SystemStateContext = createContext();
 
@@ -24,6 +27,34 @@ export function SystemStateProvider({ children }) {
   const [owners, setOwners] = useState(() => getStationOwners());
   const [customers, setCustomers] = useState(() => getCustomers());
   const [auditLogs, setAuditLogs] = useState(() => getAuditLogs());
+
+  // Real-time synchronization with MySQL Backend
+  useEffect(() => {
+    const loadBackendData = async () => {
+      try {
+        const [stRes, bkRes, pmRes] = await Promise.all([
+          stationService.getStations(),
+          bookingService.getBookings(),
+          paymentService.getPayments(),
+        ]);
+        if (stRes?.success && Array.isArray(stRes.data) && stRes.data.length > 0) {
+          setStations(stRes.data);
+          localStorage.setItem("ev_stations", JSON.stringify(stRes.data));
+        }
+        if (bkRes?.success && Array.isArray(bkRes.data) && bkRes.data.length > 0) {
+          setBookings(bkRes.data);
+          localStorage.setItem("ev_bookings", JSON.stringify(bkRes.data));
+        }
+        if (pmRes?.success && Array.isArray(pmRes.data) && pmRes.data.length > 0) {
+          setPayments(pmRes.data);
+          localStorage.setItem("ev_payments", JSON.stringify(pmRes.data));
+        }
+      } catch (err) {
+        console.warn("Could not sync with MySQL backend:", err);
+      }
+    };
+    loadBackendData();
+  }, []);
 
   // Customer Wallet State
   const [wallet, setWallet] = useState(() => {
@@ -391,6 +422,9 @@ export function SystemStateProvider({ children }) {
   /**
    * Booking Operations (Holds, Payments & Confirmations)
    */
+  /**
+   * Booking Operations (Holds, Payments & Confirmations)
+   */
   const createBookingHold = (bookingData) => {
     const newBookingId = getNextBookingId();
     const newInvoiceId = getNextInvoiceId();
@@ -426,12 +460,36 @@ export function SystemStateProvider({ children }) {
       createdAt: new Date().toISOString(),
     };
 
+    // Pre-insert into MySQL Backend
+    const backendPayload = {
+      station_id: bookingData.stationId,
+      slot_id: bookingData.slotId || (typeof bookingData.chargerId === "number" ? bookingData.chargerId : 1),
+      vehicleNumber: bookingData.vehicleNumber,
+      vehicleType: bookingData.vehicleType || "Car",
+      chargingType: bookingData.chargingType || "DC Fast Charging",
+      duration: parseFloat(bookingData.duration) || 45,
+      date: bookingData.date,
+      time: bookingData.time,
+      amount: bookingData.totalAmount || 416,
+      paymentMethod: bookingData.paymentMethod || "Razorpay Test Mode",
+    };
+
+    bookingService.createBooking(backendPayload).then((res) => {
+      if (res && res.success && res.data) {
+        newBooking.id = res.data.id;
+        newBooking.bookingId = res.data.bookingId;
+        newBooking.booking_id = res.data.bookingId;
+        setBookings((prev) => [newBooking, ...prev.filter((b) => b.bookingId !== newBooking.bookingId)]);
+        stationService.getStations().then((st) => st.data && setStations(st.data));
+      }
+    }).catch((err) => console.warn("Backend booking hold warning:", err));
+
     saveBooking(newBooking);
-    setBookings(getBookings());
+    setBookings((prev) => [newBooking, ...prev]);
     return newBooking;
   };
 
-  const confirmBookingPayment = (bookingId, razorpayPaymentId, razorpayOrderId, signature) => {
+  const confirmBookingPayment = async (bookingId, razorpayPaymentId, razorpayOrderId, signature) => {
     const newPaymentId = getNextPaymentId();
     const currentBookings = getBookings();
     const targetBooking = currentBookings.find((b) => b.bookingId === bookingId);
@@ -463,7 +521,24 @@ export function SystemStateProvider({ children }) {
       date: new Date().toISOString(),
     };
     savePayment(newPayment);
-    setPayments(getPayments());
+    setPayments((prev) => [newPayment, ...prev]);
+
+    // Persist to MySQL Backend
+    try {
+      await paymentService.verifyPayment({
+        bookingId,
+        razorpayPaymentId,
+        razorpayOrderId,
+        razorpaySignature: signature,
+        amount: targetBooking ? targetBooking.totalAmount : 416,
+      });
+      // Refresh state from live MySQL
+      bookingService.getBookings().then((r) => r.data && setBookings(r.data));
+      paymentService.getPayments().then((r) => r.data && setPayments(r.data));
+      stationService.getStations().then((r) => r.data && setStations(r.data));
+    } catch (apiErr) {
+      console.warn("Backend payment verification notice:", apiErr);
+    }
 
     // Earn Loyalty Points (10 points per ₹100 spent)
     const pointsEarned = Math.floor((targetBooking ? targetBooking.totalAmount : 400) / 10);
@@ -482,6 +557,15 @@ export function SystemStateProvider({ children }) {
   };
 
   const cancelBooking = async (bookingId, reason = "Customer cancelled booking") => {
+    try {
+      await bookingService.cancelBooking(bookingId);
+      // Reload live data from backend to ensure slot status shows Available
+      stationService.getStations().then((st) => st.data && setStations(st.data));
+      bookingService.getBookings().then((bk) => bk.data && setBookings(bk.data));
+    } catch (err) {
+      console.warn("cancelBooking backend notice:", err.message);
+    }
+
     const res = await apiService.requestRefund({ bookingId, reason });
     
     const currentBookings = getBookings();

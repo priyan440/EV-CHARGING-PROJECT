@@ -13,7 +13,7 @@ function normalizeRole(r) {
   if (!r) return "";
   const upper = r.toUpperCase();
   if (upper === "STATION_OWNER" || upper === "OWNER") return "OWNER";
-  if (upper === "CUSTOMER") return "CUSTOMER";
+  if (upper === "CUSTOMER" || upper === "USER") return "CUSTOMER";
   if (upper === "ADMIN") return "ADMIN";
   return upper;
 }

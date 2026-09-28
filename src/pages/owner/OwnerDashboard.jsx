@@ -32,16 +32,22 @@ export default function OwnerDashboard() {
   const { stations, bookings, activeSessions } = useSystemState();
 
   const ownerCounterId = currentUser?.counterId || "OWNER0001";
-  const ownerStations = stations.filter((s) => s.ownerCounterId === ownerCounterId);
+  const ownerId = currentUser?.id || currentUser?.userId;
+  const ownerStations = stations.filter(
+    (s) =>
+      s.ownerCounterId === ownerCounterId ||
+      (ownerId && s.ownerId && Number(s.ownerId) === Number(ownerId)) ||
+      (!s.ownerId && !s.ownerCounterId) // fallback if newly added
+  );
 
   const totalChargers = ownerStations.reduce(
-    (sum, s) => sum + ((s.chargers || []).length || 4),
+    (sum, s) => sum + ((s.chargers || []).length || s.total_slots || 4),
     0
   );
 
   const availableChargers = ownerStations.reduce(
     (sum, s) =>
-      sum + (s.chargers || []).filter((c) => c.status === "Available").length,
+      sum + ((s.chargers || []).filter((c) => c.status === "Available" || c.status === "AVAILABLE").length || s.available_slots || 0),
     0
   );
 

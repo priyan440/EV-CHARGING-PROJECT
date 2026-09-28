@@ -90,6 +90,33 @@ export const apiService = {
     }
   },
 
+  getStationPriceQuote: async (stationId, params = {}) => {
+    try {
+      const res = await api.get(`/stations/${stationId}/price-quote`, { params });
+      return res.data;
+    } catch (err) {
+      return { success: false, message: err.response?.data?.message || err.message };
+    }
+  },
+
+  getStationPricingRules: async (stationId) => {
+    try {
+      const res = await api.get(`/stations/${stationId}/pricing-rules`);
+      return res.data;
+    } catch (err) {
+      return { success: false, message: err.response?.data?.message || err.message };
+    }
+  },
+
+  updateStationPricingRules: async (stationId, data) => {
+    try {
+      const res = await api.put(`/stations/${stationId}/pricing-rules`, data);
+      return res.data;
+    } catch (err) {
+      return { success: false, message: err.response?.data?.message || err.message };
+    }
+  },
+
   // External India EV Charging Stations (Open Charge Map API Sourced)
   fetchExternalEvStations: async (params = {}) => {
     try {
@@ -168,8 +195,26 @@ export const apiService = {
     try {
       const res = await api.post("/bookings", bookingData);
       return res.data;
-    } catch {
-      return null;
+    } catch (err) {
+      return { success: false, message: err.response?.data?.message || err.message };
+    }
+  },
+
+  getBookings: async (params = {}) => {
+    try {
+      const res = await api.get("/bookings", { params });
+      return res.data;
+    } catch (err) {
+      return { success: false, data: [] };
+    }
+  },
+
+  cancelBooking: async (bookingId) => {
+    try {
+      const res = await api.put(`/bookings/${bookingId}`, { status: "CANCELLED" });
+      return res.data;
+    } catch (err) {
+      return { success: false, message: err.response?.data?.message || err.message };
     }
   },
 
@@ -201,12 +246,44 @@ export const apiService = {
     }
   },
 
+  getPayments: async (params = {}) => {
+    try {
+      const res = await api.get("/payments", { params });
+      return res.data;
+    } catch {
+      return { success: false, data: [] };
+    }
+  },
+
   requestRefund: async (refundData) => {
     try {
       const res = await api.post("/payments/refund", refundData);
       return res.data;
     } catch {
       return null;
+    }
+  },
+
+  // Analytics & Forecasts
+  getOwnerForecast: async (params = {}) => {
+    try {
+      const res = await api.get("/analytics/owner/forecast", { params });
+      return res.data;
+    } catch (err) {
+      console.warn("Forecast API call notice:", err.message);
+      return { success: false, message: err.message };
+    }
+  },
+
+  getOwnerIntelligence: async (ownerCounterId) => {
+    try {
+      const res = await api.get("/analytics/owner/intelligence", {
+        params: ownerCounterId ? { ownerCounterId } : {},
+      });
+      return res.data;
+    } catch (err) {
+      console.warn("Owner intelligence API call notice:", err.message);
+      return { success: false, message: err.message };
     }
   },
 };

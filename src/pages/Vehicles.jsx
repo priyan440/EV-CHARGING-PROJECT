@@ -44,13 +44,21 @@ export default function Vehicles() {
     range: 312,
   });
 
-  const loadVehicles = () => {
+  const loadVehicles = async () => {
+    try {
+      const live = await vehicleService.fetchVehicles();
+      if (live && live.length > 0) {
+        setVehicles(live);
+        return;
+      }
+    } catch {
+      // Fallback to local
+    }
     let list = vehicleService.getVehicles(customerId);
     if (!list || list.length === 0) {
       if (currentUser?.vehicles && currentUser.vehicles.length > 0) {
         list = currentUser.vehicles;
       } else {
-        // Fallback to all available garage vehicles so the page is never blank
         list = vehicleService.getVehicles();
       }
     }
@@ -75,13 +83,13 @@ export default function Vehicles() {
     setShowAddModal(true);
   };
 
-  const handleSaveVehicle = (e) => {
+  const handleSaveVehicle = async (e) => {
     e.preventDefault();
     if (!formData.vehicleNumber || !formData.model) return;
 
     if (editingVehicle) {
       // Edit existing
-      vehicleService.updateVehicle(editingVehicle.id, {
+      await vehicleService.updateVehicle(editingVehicle.id, {
         manufacturer: formData.manufacturer,
         brand: formData.manufacturer,
         model: formData.model,
@@ -96,7 +104,7 @@ export default function Vehicles() {
       setEditingVehicle(null);
     } else {
       // Add new
-      vehicleService.addVehicle({
+      await vehicleService.addVehicle({
         customerId,
         ownerName: currentUser?.name || "EV User",
         manufacturer: formData.manufacturer,
@@ -112,17 +120,17 @@ export default function Vehicles() {
       setToast({ message: `New EV ${formData.vehicleNumber} added to garage!`, type: "success" });
       setShowAddModal(false);
     }
-    loadVehicles();
+    await loadVehicles();
   };
 
-  const handleDeleteVehicle = (vehicleId, number) => {
+  const handleDeleteVehicle = async (vehicleId, number) => {
     if (vehicles.length <= 1) {
       setToast({ message: "You must maintain at least one vehicle in your garage.", type: "warning" });
       return;
     }
     if (window.confirm(`Are you sure you want to remove vehicle ${number}?`)) {
-      vehicleService.deleteVehicle(vehicleId);
-      loadVehicles();
+      await vehicleService.deleteVehicle(vehicleId);
+      await loadVehicles();
       setToast({ message: `Vehicle ${number} removed from garage.`, type: "info" });
     }
   };

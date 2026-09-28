@@ -15,7 +15,7 @@ import "./App.css";
 
 const googleClientId =
   import.meta.env.VITE_GOOGLE_CLIENT_ID ||
-  "your_google_client_id_here.apps.googleusercontent.com";
+  "142944835630-noevnc3adlsnd908bhu29r341qu9leba.apps.googleusercontent.com";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>

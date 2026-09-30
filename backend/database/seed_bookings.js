@@ -39,12 +39,9 @@ async function seedHistoricalBookings() {
       process.exit(1);
     }
 
-    // Get customer user and vehicle
-    const customers = await query("SELECT id FROM users WHERE role = 'USER' LIMIT 1");
-    const customerId = customers.length > 0 ? customers[0].id : 3;
-
-    const vehicles = await query("SELECT id, vehicle_type FROM vehicles WHERE user_id = ? LIMIT 3", [customerId]);
-    const vehicleId = vehicles.length > 0 ? vehicles[0].id : 1;
+    // For station historical seed bookings, use demo fleet user 999 to isolate from customer personal bookings
+    const customerId = 999;
+    const vehicleId = 1;
 
     // 2. Clean previous generated historical bookings
     console.log("🧹 Clearing previous historical seed bookings...");

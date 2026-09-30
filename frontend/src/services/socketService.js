@@ -8,14 +8,18 @@ class SocketService {
   }
 
   getBackendUrl() {
-    // Dynamic URL detection for local dev, custom port, or production
+    if (import.meta.env.VITE_SOCKET_URL) {
+      return import.meta.env.VITE_SOCKET_URL;
+    }
+    if (import.meta.env.VITE_API_URL) {
+      return import.meta.env.VITE_API_URL.replace(/\/api\/?$/, "");
+    }
     if (typeof window !== "undefined") {
       const hostname = window.location.hostname || "localhost";
       const protocol = window.location.protocol === "https:" ? "https:" : "http:";
-      // If running Vite on 5173 / 5174 / 5175, backend is on port 5000
-      return `${protocol}//${hostname}:5000`;
+      return `${protocol}//${hostname}:5001`;
     }
-    return "http://localhost:5000";
+    return "http://localhost:5001";
   }
 
   connect() {

@@ -247,7 +247,7 @@ export async function checkChargerConflict({
       if (isWithinProtection || isOverlap) {
         const timeUntilStart = bStartMins - currentMinutes;
         const customerName = eb.customer_name || eb.user_name || "Online EV Customer";
-        const vehicleNum = eb.vehicle_number || eb.veh_num || "TN58AB1234";
+        const vehicleNum = eb.vehicle_number || eb.veh_num || "N/A";
 
         const recommended = await getRecommendedChargers(
           stationId,

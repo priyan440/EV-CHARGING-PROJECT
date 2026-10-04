@@ -143,6 +143,71 @@ class SocketService {
     return () => this.socket.off("dashboard_stats_updated", callback);
   }
 
+  onTelemetryUpdated(callback) {
+    if (!this.socket) this.connect();
+    const handler = (payload) => {
+      const data = payload?.telemetry || payload;
+      callback(data);
+    };
+    this.socket.on("telemetry_updated", handler);
+    this.socket.on("charger:chargingUpdated", handler);
+    return () => {
+      this.socket.off("telemetry_updated", handler);
+      this.socket.off("charger:chargingUpdated", handler);
+    };
+  }
+
+  onSessionStarted(callback) {
+    if (!this.socket) this.connect();
+    const handler = (payload) => {
+      const data = payload?.session || payload;
+      callback(data);
+    };
+    this.socket.on("session_started", handler);
+    this.socket.on("session:started", handler);
+    return () => {
+      this.socket.off("session_started", handler);
+      this.socket.off("session:started", handler);
+    };
+  }
+
+  onSessionStopped(callback) {
+    if (!this.socket) this.connect();
+    const handler = (payload) => {
+      const data = payload?.session || payload;
+      callback(data);
+    };
+    this.socket.on("session_stopped", handler);
+    this.socket.on("session:completed", handler);
+    return () => {
+      this.socket.off("session_stopped", handler);
+      this.socket.off("session:completed", handler);
+    };
+  }
+
+  joinUser(userId) {
+    if (this.socket && this.socket.connected && userId) {
+      this.socket.emit("join_user", userId);
+    }
+  }
+
+  joinCharger(chargerId) {
+    if (this.socket && this.socket.connected && chargerId) {
+      this.socket.emit("join_charger", chargerId);
+    }
+  }
+
+  getSocket() {
+    if (!this.socket) {
+      return this.connect();
+    }
+    return this.socket;
+  }
+
+  subscribeStatus(callback) {
+    return this.onStatusChange(callback);
+  }
+
   disconnect() {
     if (this.socket) {
       this.socket.disconnect();
@@ -153,4 +218,8 @@ class SocketService {
 }
 
 export const socketService = new SocketService();
+export const getSocket = () => socketService.getSocket();
+export const connectSocket = () => socketService.connect();
+export const disconnectSocket = () => socketService.disconnect();
 export default socketService;
+

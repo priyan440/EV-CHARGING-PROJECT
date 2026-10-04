@@ -18,25 +18,37 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-// Basemap Tile Layers
+const mapApiKey = import.meta.env.VITE_MAP_API_KEY || import.meta.env.VITE_CARTO_API_KEY || "";
+
+// Basemap Tile Layers (100% Keyless Default with Optional Custom Key)
 const BASEMAPS = {
   standard: {
     name: "Standard Light",
     url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    subdomains: "abc",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 19,
+    className: "",
   },
   dark: {
-    name: "CartoDB Dark Matter",
-    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+    name: "Dark Matter",
+    url: mapApiKey
+      ? `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=${mapApiKey}`
+      : "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    subdomains: mapApiKey ? "abcd" : "abc",
+    attribution: mapApiKey
+      ? '&copy; <a href="https://carto.com/">CARTO</a>'
+      : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 19,
+    className: mapApiKey ? "" : "map-tiles-dark",
   },
   humanitarian: {
     name: "Clean Street",
     url: "https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",
+    subdomains: "abc",
     attribution: '&copy; OpenStreetMap contributors',
     maxZoom: 19,
+    className: "",
   },
 };
 
@@ -52,6 +64,32 @@ function MapViewController({ targetCenter, targetZoom }) {
       } catch {}
     }
   }, [targetCenter, targetZoom, map]);
+  return null;
+}
+
+function MapThemeAndResizeController({ isDark }) {
+  const map = useMap();
+
+  useEffect(() => {
+    map.invalidateSize();
+    const t1 = setTimeout(() => map.invalidateSize(), 120);
+    const t2 = setTimeout(() => map.invalidateSize(), 350);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [map, isDark]);
+
+  useEffect(() => {
+    const container = map.getContainer();
+    if (!container) return;
+    const observer = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [map]);
+
   return null;
 }
 
@@ -145,7 +183,7 @@ export default function EVMap({
 
   const handleBookStation = (st) => {
     const stationId = st.id || st.stationId || "";
-    navigate(`/customer/book?stationId=${encodeURIComponent(stationId)}`);
+    navigate(`/customer/book-slot/${encodeURIComponent(stationId)}`);
   };
 
   const handleViewDetails = (st) => {
@@ -218,12 +256,15 @@ export default function EVMap({
         scrollWheelZoom={true}
       >
         <MapViewController targetCenter={targetCenter} targetZoom={targetZoom} />
+        <MapThemeAndResizeController isDark={isDark} />
 
         <TileLayer
-          key={activeTile.url}
+          key={`${activeTile.url}_${isDark ? "dark" : "light"}`}
           url={activeTile.url}
+          subdomains={activeTile.subdomains || "abc"}
           attribution={activeTile.attribution}
           maxZoom={activeTile.maxZoom}
+          className={activeTile.className || (isDark ? "map-tiles-dark" : "")}
         />
 
         {/* Markers from Database */}

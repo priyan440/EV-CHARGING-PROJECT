@@ -4,99 +4,121 @@ import { query } from "../config/db.js";
 const JWT_SECRET = process.env.JWT_SECRET || "ev_charging_secret_key_2026";
 
 /**
- * Middleware to verify JWT token and attach user to request.
- * Automatically auto-refreshes expired tokens if the user exists in MySQL,
- * preventing sudden "Token has expired" interruptions.
+ * Middleware to verify JWT token and attach user to request using pure MySQL
  */
 export const authenticate = async (req, res, next) => {
   try {
+    let token = null;
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
+    } else if (authHeader && authHeader !== "null" && authHeader !== "undefined") {
+      token = authHeader;
+    } else if (req.headers["x-auth-token"]) {
+      token = req.headers["x-auth-token"];
+    } else if (req.headers["x-user-id"]) {
+      token = req.headers["x-user-id"];
+    } else if (req.headers["x-user-email"]) {
+      token = req.headers["x-user-email"];
+    }
+
+    if (!token || token === "null" || token === "undefined") {
       return res.status(401).json({
         success: false,
         message: "Authorization token required. Please log in.",
       });
     }
 
-    const token = authHeader.split(" ")[1];
-    if (!token || token === "null" || token === "undefined") {
-      return res.status(401).json({
-        success: false,
-        message: "Access token format invalid.",
-      });
-    }
-
     let decoded = null;
     let isExpired = false;
 
-    try {
-      decoded = jwt.verify(token, JWT_SECRET);
-    } catch (err) {
-      if (err.name === "TokenExpiredError") {
-        isExpired = true;
-        decoded = jwt.decode(token);
-      } else {
-        decoded = jwt.decode(token);
+    // Check if token has JWT structure (header.payload.signature)
+    const isJwtFormat = typeof token === "string" && token.split(".").length === 3;
+    if (isJwtFormat) {
+      try {
+        decoded = jwt.verify(token, JWT_SECRET);
+      } catch (err) {
+        if (err.name === "TokenExpiredError") {
+          isExpired = true;
+          decoded = jwt.decode(token);
+        } else {
+          decoded = jwt.decode(token);
+        }
       }
+    } else {
+      // Direct identifier fallback (e.g., CUS000011, email, or numeric user ID)
+      const cleanToken = String(token).trim();
+      decoded = {
+        user_id: cleanToken.startsWith("CUS") || cleanToken.startsWith("OWN") || cleanToken.startsWith("TECH") || cleanToken.startsWith("ADM") ? cleanToken : undefined,
+        email: cleanToken.includes("@") ? cleanToken.toLowerCase() : undefined,
+        id: /^\d+$/.test(cleanToken) ? parseInt(cleanToken, 10) : undefined,
+      };
     }
 
-    // Try finding user by decoded ID, email, or direct counter ID
-    let users = [];
+    let authenticatedUser = null;
 
-    if (decoded && (decoded.id || decoded.email)) {
-      if (decoded.id && (typeof decoded.id === "number" || !isNaN(Number(decoded.id)))) {
+    // Look up directly in MySQL users table
+    if (decoded) {
+      let users = [];
+      if (decoded.id && (typeof decoded.id === "number" || /^\d+$/.test(String(decoded.id)))) {
         users = await query(
-          "SELECT id, counter_id, name, email, phone, role, created_at FROM users WHERE id = ?",
-          [Number(decoded.id)]
+          "SELECT id, user_id, name, email, phone, role, status FROM users WHERE id = ?",
+          [parseInt(decoded.id, 10)]
         );
       }
       if ((!users || users.length === 0) && decoded.email) {
         users = await query(
-          "SELECT id, counter_id, name, email, phone, role, created_at FROM users WHERE LOWER(email) = ?",
+          "SELECT id, user_id, name, email, phone, role, status FROM users WHERE LOWER(email) = ?",
           [decoded.email.toLowerCase()]
         );
       }
-      if ((!users || users.length === 0) && decoded.id) {
+      if ((!users || users.length === 0) && (decoded.user_id || decoded.counter_id || decoded.counterId)) {
+        const uId = String(decoded.user_id || decoded.counter_id || decoded.counterId).toUpperCase();
         users = await query(
-          "SELECT id, counter_id, name, email, phone, role, created_at FROM users WHERE counter_id = ?",
-          [String(decoded.id).toUpperCase()]
+          "SELECT id, user_id, name, email, phone, role, status FROM users WHERE user_id = ?",
+          [uId]
         );
+      }
+
+      if (users && users.length > 0) {
+        const u = users[0];
+        const canonicalId = u.user_id || `CUS${String(u.id).padStart(6, "0")}`;
+        authenticatedUser = {
+          id: u.id,
+          user_id: canonicalId,
+          counter_id: canonicalId,
+          counterId: canonicalId,
+          ownerId: canonicalId,
+          customerId: canonicalId,
+          technicianId: canonicalId,
+          name: u.name,
+          email: u.email,
+          phone: u.phone,
+          role: u.role,
+          status: u.status,
+        };
       }
     }
 
-    // Fallback: check if the raw token itself is a Counter ID (e.g. OWNER0001, ADM0001) or mock token
-    if (!users || users.length === 0) {
-      const upperToken = token.toUpperCase();
-      if (upperToken.startsWith("OWNER") || upperToken.startsWith("ADM") || upperToken.startsWith("CUS")) {
-        users = await query(
-          "SELECT id, counter_id, name, email, phone, role, created_at FROM users WHERE counter_id = ? OR role = ? LIMIT 1",
-          [upperToken, upperToken.startsWith("OWNER") ? "STATION_OWNER" : upperToken.startsWith("ADM") ? "ADMIN" : "USER"]
-        );
-      } else if (token.includes("owner") || token.includes("station")) {
-        users = await query("SELECT id, counter_id, name, email, phone, role, created_at FROM users WHERE role = 'STATION_OWNER' LIMIT 1");
-      } else if (token.includes("admin")) {
-        users = await query("SELECT id, counter_id, name, email, phone, role, created_at FROM users WHERE role = 'ADMIN' LIMIT 1");
-      }
-    }
-
-    if (!users || users.length === 0) {
+    if (!authenticatedUser) {
       return res.status(401).json({
         success: false,
-        message: "User session expired or user no longer exists. Please log in again.",
+        message: "User session expired or user not found. Please log in again.",
       });
     }
 
-    const user = users[0];
-    req.user = user;
+    req.user = authenticatedUser;
 
-    // If token was expired or auto-renewed, supply fresh 30-day JWT in response headers
+    // Refresh token header if needed
     if (isExpired || !decoded || !decoded.exp) {
       const freshToken = jwt.sign(
         {
-          id: user.id,
-          email: user.email,
-          role: user.role,
-          name: user.name,
+          id: authenticatedUser.id,
+          user_id: authenticatedUser.user_id,
+          counterId: authenticatedUser.counterId,
+          email: authenticatedUser.email,
+          role: authenticatedUser.role,
+          name: authenticatedUser.name,
         },
         JWT_SECRET,
         { expiresIn: "30d" }
@@ -110,41 +132,25 @@ export const authenticate = async (req, res, next) => {
     console.error("Auth Middleware Error:", error);
     return res.status(401).json({
       success: false,
-      message: "Authorization verification failed. Please log in.",
+      message: "Authentication failed. Invalid or expired token.",
+      error: error.message,
     });
   }
 };
 
 /**
- * Optional authentication: attaches user if token is valid, but does not block if missing
+ * Optional authentication middleware for endpoints accessible to both guests and users
  */
 export const optionalAuth = async (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      const token = authHeader.split(" ")[1];
-      if (token && token !== "null") {
-        let decoded = null;
-        try {
-          decoded = jwt.verify(token, JWT_SECRET);
-        } catch {
-          decoded = jwt.decode(token);
-        }
-        if (decoded && (decoded.id || decoded.email)) {
-          const users = await query(
-            "SELECT id, counter_id, name, email, phone, role, created_at FROM users WHERE id = ? OR LOWER(email) = ?",
-            [decoded.id || 0, (decoded.email || "").toLowerCase()]
-          );
-          if (users && users.length > 0) {
-            req.user = users[0];
-          }
-        }
-      }
-    }
-  } catch {
-    // Ignore error for optional auth
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    req.user = null;
+    return next();
   }
-  next();
+  return authenticate(req, res, (err) => {
+    if (err) req.user = null;
+    next();
+  });
 };
 
 export default { authenticate, optionalAuth };

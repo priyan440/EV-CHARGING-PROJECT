@@ -15,6 +15,7 @@ function normalizeRole(r) {
   if (upper === "STATION_OWNER" || upper === "OWNER") return "OWNER";
   if (upper === "CUSTOMER" || upper === "USER") return "CUSTOMER";
   if (upper === "ADMIN") return "ADMIN";
+  if (upper === "TECHNICIAN" || upper === "TECH") return "TECHNICIAN";
   return upper;
 }
 
@@ -75,13 +76,21 @@ export default function ProtectedRoute({ children, allowedRoles, allowedRole }) 
     rolesToCheck.push(normalizeRole(allowedRole));
   }
 
-  // 4. Role Authorization: if user role not allowed, route to 403
+  // 4. Role Authorization: if user role not allowed, redirect to their own dashboard
   if (rolesToCheck.length > 0) {
     const userRoleNormalized = normalizeRole(role);
     const isPermitted = rolesToCheck.includes(userRoleNormalized);
 
     if (!isPermitted) {
-      return <Navigate to="/403" replace state={{ attemptedPath: location.pathname }} />;
+      const targetDashboard =
+        userRoleNormalized === "ADMIN"
+          ? "/admin/dashboard"
+          : userRoleNormalized === "OWNER"
+          ? "/owner/dashboard"
+          : userRoleNormalized === "TECHNICIAN"
+          ? "/technician/dashboard"
+          : "/customer/dashboard";
+      return <Navigate to={targetDashboard} replace />;
     }
   }
 

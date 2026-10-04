@@ -16,12 +16,23 @@ export function AuthProvider({ children }) {
   });
 
   useEffect(() => {
-    initializeStorage();
-    const user = authService.getCurrentUser();
-    if (user) {
-      setCurrentUser(user);
+    try {
+      initializeStorage();
+      const user = authService.getCurrentUser();
+      if (user) {
+        setCurrentUser(user);
+        // Asynchronously fetch latest authoritative profile from MySQL
+        authService.fetchFreshProfile().then((freshUser) => {
+          if (freshUser) {
+            setCurrentUser(freshUser);
+          }
+        }).catch(() => {});
+      }
+    } catch (e) {
+      console.warn("Auth initialization error:", e);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   const isAuthenticated = Boolean(currentUser && (currentUser.counterId || currentUser.id));
@@ -41,8 +52,8 @@ export function AuthProvider({ children }) {
   /**
    * Google OAuth Login (Automatic Role Detection)
    */
-  const loginWithGoogle = (credentialOrProfile, intendedRole = null) => {
-    const res = authService.loginWithGoogle(credentialOrProfile, intendedRole);
+  const loginWithGoogle = async (credentialOrProfile, intendedRole = null) => {
+    const res = await authService.loginWithGoogle(credentialOrProfile, intendedRole);
     if (res.success && res.user) {
       setCurrentUser(res.user);
     }
@@ -97,8 +108,8 @@ export function AuthProvider({ children }) {
   /**
    * Update Profile
    */
-  const updateProfile = (updatedData) => {
-    const res = authService.updateProfile(updatedData);
+  const updateProfile = async (updatedData) => {
+    const res = await authService.updateProfile(updatedData);
     if (res.success && res.user) {
       setCurrentUser(res.user);
     }

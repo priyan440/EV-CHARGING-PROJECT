@@ -53,7 +53,6 @@ const DashboardLayout = ({ children, activeTab, setActiveTab }) => {
           { id: 'route', name: 'EV Trip Planner', icon: FiNavigation },
           { id: 'tariff', name: 'Tariff Estimator', icon: FiDollarSign },
           { id: 'history', name: 'Booking History', icon: FiCalendar },
-          { id: 'charge', name: 'Charging Simulator', icon: FiCpu },
           { id: 'billing', name: 'Invoices & Payments', icon: FiFileText },
           { id: 'support', name: 'Emergency Support', icon: FiAlertOctagon },
         ];

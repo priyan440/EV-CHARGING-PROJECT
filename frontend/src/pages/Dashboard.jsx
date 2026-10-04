@@ -34,13 +34,7 @@ function Dashboard() {
 
   if (!currentUser) return null;
 
-  const vehicle = currentUser.vehicle || {
-    brand: "EV",
-    model: "Vehicle",
-    number: "TN58AB1234",
-    batteryPercentage: 65,
-    batteryCapacity: "40.5",
-  };
+  const vehicle = currentUser.vehicle || null;
 
   const upcomingBooking = bookings.find(
     (b) => b.status === "Confirmed" || b.status === "Upcoming"

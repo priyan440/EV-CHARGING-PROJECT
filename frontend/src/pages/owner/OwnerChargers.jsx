@@ -1,185 +1,569 @@
-import { useState } from "react";
-import { Cpu, Plus, Zap, CheckCircle2 } from "lucide-react";
-import { useAuth } from "../../contexts/AuthContext";
-import { useSystemState } from "../../contexts/SystemStateContext";
+import React, { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
+import {
+  Cpu,
+  Plus,
+  Zap,
+  CheckCircle2,
+  AlertTriangle,
+  Play,
+  Square,
+  RefreshCw,
+  Search,
+  Sliders,
+  Sparkles,
+  Layers,
+  Wrench,
+  Radio,
+  X,
+  Building2,
+  Activity,
+  ShieldAlert,
+  Power,
+} from "lucide-react";
+import {
+  getOwnerChargers,
+  createOwnerCharger,
+  setChargerSimulatorState,
+  getOwnerStations,
+} from "../../services/ownerService";
+import { getSocket } from "../../services/socketService";
 
 export default function OwnerChargers() {
-  const { currentUser } = useAuth();
-  const { stations, addChargerToStation, toggleChargerStatus } = useSystemState();
+  const [searchParams] = useSearchParams();
+  const stationIdParam = searchParams.get("stationId") || "";
+
+  const [chargers, setChargers] = useState([]);
+  const [stations, setStations] = useState([]);
+  const [selectedStation, setSelectedStation] = useState(stationIdParam);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [simulatorModalCharger, setSimulatorModalCharger] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [toastMsg, setToastMsg] = useState("");
 
-  const ownerCounterId = currentUser?.counterId || "OWNER0001";
-  const myStations = stations.filter((s) => s.ownerCounterId === ownerCounterId);
+  // Add Charger Form State
+  const [formData, setFormData] = useState({
+    stationId: "",
+    name: "",
+    chargerType: "DC_FAST",
+    powerRating: 60,
+    connectorType: "CCS2",
+    pricePerKwh: 18.0,
+    manufacturer: "Delta Electronics",
+    model: "UltraFast DC-120",
+  });
 
-  const [selectedStationId, setSelectedStationId] = useState(myStations[0]?.id || "STA001");
-  const [connector, setConnector] = useState("CCS2");
-  const [powerKw, setPowerKw] = useState("60");
-  const [pricePerKwh, setPricePerKwh] = useState("18");
+  const showToast = (msg) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(""), 3500);
+  };
 
-  const handleAddCharger = (e) => {
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [chgData, stnData] = await Promise.all([
+        getOwnerChargers(selectedStation),
+        getOwnerStations(),
+      ]);
+      setChargers(Array.isArray(chgData) ? chgData : []);
+      setStations(Array.isArray(stnData) ? stnData : []);
+      if (!formData.stationId && Array.isArray(stnData) && stnData.length > 0) {
+        setFormData((prev) => ({ ...prev, stationId: stnData[0].stationId || stnData[0].id }));
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("Error loading chargers from MySQL");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+
+    const socket = getSocket?.();
+    if (socket) {
+      const handleChargerChange = () => {
+        getOwnerChargers(selectedStation).then((data) => setChargers(Array.isArray(data) ? data : [])).catch(() => {});
+      };
+      const handleTelemetry = (data) => {
+        setChargers((prev) =>
+          prev.map((c) => {
+            const cId = c.charger_id || c.chargerId;
+            return cId === data.telemetry?.chargerId
+              ? {
+                  ...c,
+                  telemetry: { ...c.telemetry, ...data.telemetry },
+                  status: data.telemetry?.status || c.status,
+                }
+              : c;
+          })
+        );
+      };
+
+      socket.on("charger_status_changed", handleChargerChange);
+      socket.on("telemetry_updated", handleTelemetry);
+
+      return () => {
+        socket.off("charger_status_changed", handleChargerChange);
+        socket.off("telemetry_updated", handleTelemetry);
+      };
+    }
+  }, [selectedStation]);
+
+  const handleCreateCharger = async (e) => {
     e.preventDefault();
-    addChargerToStation(selectedStationId, {
-      connector,
-      powerKw: parseFloat(powerKw),
-      pricePerKwh: parseFloat(pricePerKwh),
-    });
+    if (!formData.stationId) {
+      showToast("Please select a valid station.");
+      return;
+    }
 
-    setShowAddModal(false);
+    setSubmitting(true);
+    try {
+      const res = await createOwnerCharger({
+        stationId: formData.stationId,
+        chargerName: formData.name || `Charger ${formData.powerRating}kW`,
+        chargerType: formData.chargerType,
+        powerKw: Number(formData.powerRating),
+      });
+      showToast(`Charger added! ID: ${res.data?.charger_id || res.data?.chargerId || "CHG"}`);
+      setShowAddModal(false);
+      setFormData({
+        stationId: stations[0]?.stationId || stations[0]?.id || "",
+        name: "",
+        chargerType: "DC_FAST",
+        powerRating: 60,
+        connectorType: "CCS2",
+        pricePerKwh: 18.0,
+        manufacturer: "Delta Electronics",
+        model: "UltraFast DC-120",
+      });
+      loadData();
+    } catch (err) {
+      showToast("Error creating charger: " + (err.message || "Failed"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSimulatorAction = async (chargerId, state, powerKw = 60, faultCode = null) => {
+    try {
+      await setChargerSimulatorState(chargerId, {
+        status: state,
+        powerKw: Number(powerKw),
+        faultCode,
+      });
+      showToast(`Charger ${chargerId} simulated state: ${state}`);
+      setSimulatorModalCharger(null);
+      loadData();
+    } catch (err) {
+      showToast("Error updating simulator: " + (err.message || "Failed"));
+    }
+  };
+
+  const filteredChargers = chargers.filter((c) => {
+    const status = (c.status || "AVAILABLE").toUpperCase();
+    if (statusFilter !== "ALL" && status !== statusFilter) return false;
+
+    if (!searchTerm.trim()) return true;
+    const q = searchTerm.toLowerCase();
+    const name = (c.charger_name || c.name || "").toLowerCase();
+    const cId = (c.charger_id || c.chargerId || "").toLowerCase();
+    const sName = (c.station_name || c.stationId || "").toLowerCase();
+    const type = (c.charger_type || c.connectorType || "").toLowerCase();
+
+    return name.includes(q) || cId.includes(q) || sName.includes(q) || type.includes(q);
+  });
+
+  const getStatusBadge = (status) => {
+    const st = (status || "AVAILABLE").toUpperCase();
+    switch (st) {
+      case "AVAILABLE":
+        return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30";
+      case "CHARGING":
+        return "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30";
+      case "OCCUPIED":
+      case "RESERVED":
+        return "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30";
+      case "FAULTED":
+      case "FAULT":
+        return "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30";
+      case "MAINTENANCE":
+        return "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30";
+      case "OFFLINE":
+      default:
+        return "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/30";
+    }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="p-6 md:p-8 rounded-3xl bg-[#0B1329] border border-slate-800 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in font-sans">
+      {/* Toast Alert */}
+      {toastMsg && (
+        <div className="fixed top-6 right-6 z-50 bg-[var(--accent-primary)] text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-blue-400/30 animate-fade-in font-bold text-xs">
+          <Sparkles className="w-4 h-4 text-yellow-300" />
+          <span>{toastMsg}</span>
+        </div>
+      )}
+
+      {/* Header Banner */}
+      <div className="p-6 md:p-8 rounded-3xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-white flex items-center gap-2">
-            <Cpu size={28} className="text-cyan-400" /> Charger Bay Management
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+              OCPP 2.0.1 SIMULATOR LAYER
+            </span>
+          </div>
+          <h1 className="text-2xl md:text-3xl font-black text-[var(--text-primary)] flex items-center gap-3 font-mono">
+            <Cpu className="w-7 h-7 text-emerald-500" />
+            Chargers & Live Monitoring
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Add charger units, set tariff pricing per kWh, and switch charger live operational status.
+          <p className="text-xs text-[var(--text-muted)] mt-1">
+            Manage physical charging hardware, power ratings, connector types, and simulate live OCPP states in MySQL.
           </p>
         </div>
 
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              if (stations.length > 0) {
+                setFormData((prev) => ({ ...prev, stationId: stations[0].stationId || stations[0].id }));
+              }
+              setShowAddModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-500/20 transition active:scale-95 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Add Charger
+          </button>
+        </div>
+      </div>
+
+      {/* Filters: Station Select & Search */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2.5 flex-1">
+          {/* Search Box */}
+          <div className="relative flex-1 min-w-[200px] max-w-md">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+            <input
+              type="text"
+              placeholder="Search by charger ID, name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs rounded-xl pl-9 pr-4 py-2.5 focus:outline-none focus:border-emerald-500"
+            />
+          </div>
+
+          {/* Station Selector */}
+          <select
+            value={selectedStation}
+            onChange={(e) => setSelectedStation(e.target.value)}
+            className="bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:border-emerald-500 cursor-pointer"
+          >
+            <option value="">All Stations</option>
+            {stations.map((st) => (
+              <option key={st.stationId || st.id} value={st.stationId || st.id}>
+                {st.station_name || st.stationName || st.name}
+              </option>
+            ))}
+          </select>
+
+          {/* Status Filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:border-emerald-500 cursor-pointer"
+          >
+            <option value="ALL">All Statuses</option>
+            <option value="AVAILABLE">Available</option>
+            <option value="CHARGING">Charging</option>
+            <option value="RESERVED">Reserved</option>
+            <option value="OCCUPIED">Occupied</option>
+            <option value="FAULTED">Faulted</option>
+            <option value="MAINTENANCE">Maintenance</option>
+            <option value="OFFLINE">Offline</option>
+          </select>
+        </div>
+
         <button
-          onClick={() => setShowAddModal(true)}
-          className="px-5 py-3 rounded-2xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-extrabold text-xs uppercase tracking-wider transition flex items-center gap-2"
+          onClick={loadData}
+          disabled={loading}
+          className="p-2.5 bg-[var(--bg-surface-raised)] hover:bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-primary)] rounded-xl border border-[var(--border-subtle)] transition cursor-pointer self-end sm:self-auto"
+          title="Refresh Chargers"
         >
-          <Plus size={16} /> Add Charger Bay
+          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-emerald-500" : ""}`} />
         </button>
       </div>
 
-      {/* Chargers Grid Grouped by Station */}
-      <div className="space-y-6">
-        {myStations.map((st) => (
-          <div key={st.id} className="p-6 rounded-3xl bg-[#0B1329] border border-slate-800 shadow-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="text-lg font-bold text-white">{st.name}</h3>
-                <p className="text-xs text-slate-400 font-mono">ID: {st.id} | {st.city}</p>
-              </div>
-              <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/20 px-3 py-1 rounded-xl border border-emerald-500/30">
-                {(st.chargers || []).length} Chargers
-              </span>
-            </div>
+      {/* Chargers Grid */}
+      {loading ? (
+        <div className="text-center py-16 bg-[var(--bg-surface)] rounded-3xl border border-[var(--border-subtle)] space-y-3">
+          <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="text-[var(--text-muted)] text-xs font-mono animate-pulse">Loading live charger states from MySQL...</p>
+        </div>
+      ) : filteredChargers.length === 0 ? (
+        <div className="text-center py-16 bg-[var(--bg-surface)] rounded-3xl border border-[var(--border-subtle)] shadow-sm space-y-3">
+          <Cpu className="w-12 h-12 text-[var(--text-muted)] mx-auto" />
+          <h3 className="text-base font-bold text-[var(--text-primary)]">No Chargers Found</h3>
+          <p className="text-xs text-[var(--text-muted)]">Add a new DC or AC charger to your charging stations in MySQL.</p>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-500 transition cursor-pointer shadow-md"
+          >
+            + Add Charger
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredChargers.map((charger) => {
+            const chargerCode = charger.charger_id || charger.chargerId || `CHG00${charger.id}`;
+            const chargerTitle = charger.charger_name || charger.name || `Charger ${chargerCode}`;
+            const powerRating = charger.power_kw || charger.powerKw || charger.powerRating || 60;
+            const stationTitle = charger.station_name || charger.stationId || "EV Power Station";
+            const currentStatus = (charger.status || "AVAILABLE").toUpperCase();
+            const chargerType = charger.charger_type || charger.chargerType || "DC_FAST";
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {(st.chargers || []).map((ch) => (
-                <div key={ch.id} className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono font-bold text-slate-300">{ch.id}</span>
-                    <span
-                      className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${
-                        ch.status === "Available"
-                          ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-                          : ch.status === "Occupied"
-                          ? "bg-red-500/20 text-red-400 border-red-500/30"
-                          : "bg-amber-500/20 text-amber-400 border-amber-500/30"
-                      }`}
-                    >
-                      {ch.status}
+            return (
+              <div
+                key={charger.id || chargerCode}
+                className="p-5 rounded-3xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-emerald-500/40 transition-all shadow-sm flex flex-col justify-between space-y-4"
+              >
+                <div>
+                  {/* Top Bar */}
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                      {chargerCode}
+                    </span>
+                    <span className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${getStatusBadge(currentStatus)}`}>
+                      {currentStatus}
                     </span>
                   </div>
 
-                  <div>
-                    <div className="text-base font-bold text-white font-mono">{ch.connector}</div>
-                    <div className="text-xs text-slate-400">Power: <span className="text-white font-mono font-bold">{ch.powerKw} kW</span></div>
-                    <div className="text-xs text-slate-400">Rate: <span className="text-cyan-400 font-mono font-bold">₹{ch.pricePerKwh}/kWh</span></div>
+                  {/* Charger Title */}
+                  <h3 className="text-base font-bold text-[var(--text-primary)] leading-tight">{chargerTitle}</h3>
+                  <p className="text-xs text-[var(--text-muted)] flex items-center gap-1 mt-1">
+                    <Building2 size={12} /> {stationTitle}
+                  </p>
+
+                  {/* Specifications Card */}
+                  <div className="mt-3.5 p-3 rounded-2xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-[var(--text-muted)] block text-[10px] uppercase font-bold">Power Output</span>
+                      <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">{powerRating} kW</span>
+                    </div>
+                    <div>
+                      <span className="text-[var(--text-muted)] block text-[10px] uppercase font-bold">Standard</span>
+                      <span className="font-bold text-[var(--text-primary)]">{chargerType.replace("_", " ")}</span>
+                    </div>
                   </div>
-
-                  {/* Toggle Status */}
-                  <select
-                    value={ch.status}
-                    onChange={(e) => toggleChargerStatus(st.id, ch.id, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 text-xs font-bold text-slate-300 p-2 rounded-xl"
-                  >
-                    <option value="Available">Available</option>
-                    <option value="Occupied">Occupied</option>
-                    <option value="Maintenance">Maintenance</option>
-                    <option value="Offline">Offline</option>
-                  </select>
                 </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
 
-      {/* Add Charger Modal */}
+                {/* Simulator Action Button */}
+                <div className="pt-2 border-t border-[var(--border-subtle)] flex gap-2">
+                  <button
+                    onClick={() => setSimulatorModalCharger(charger)}
+                    className="flex-1 py-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Sliders size={13} /> OCPP Simulator Controls
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal: Add New Charger */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-[#0B1329] border border-slate-800 p-6 rounded-3xl shadow-2xl text-slate-200 space-y-4">
-            <h3 className="text-lg font-bold text-white border-b border-slate-800 pb-3">
-              Add New Charger Unit (CHG Counter ID)
-            </h3>
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] w-full max-w-lg rounded-3xl p-6 space-y-4 shadow-2xl animate-fade-in text-[var(--text-primary)]">
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
+              <h3 className="text-base font-bold text-[var(--text-primary)] flex items-center gap-2 font-mono">
+                <Plus size={18} className="text-emerald-500" /> Add New Charger (MySQL)
+              </h3>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
 
-            <form onSubmit={handleAddCharger} className="space-y-3 text-xs">
+            <form onSubmit={handleCreateCharger} className="space-y-4">
               <div>
-                <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">Target Station</label>
+                <label className="text-xs font-bold text-[var(--text-muted)] block mb-1">Target Station *</label>
                 <select
-                  value={selectedStationId}
-                  onChange={(e) => setSelectedStationId(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 text-white font-bold p-2.5 rounded-xl"
+                  value={formData.stationId}
+                  onChange={(e) => setFormData({ ...formData, stationId: e.target.value })}
+                  className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs rounded-xl p-2.5 font-bold"
+                  required
                 >
-                  {myStations.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.id} - {s.name}
+                  {stations.map((s) => (
+                    <option key={s.stationId || s.id} value={s.stationId || s.id}>
+                      {s.station_name || s.stationName || s.name}
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div>
-                <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">Connector Standard</label>
-                <select
-                  value={connector}
-                  onChange={(e) => setConnector(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 text-white font-bold p-2.5 rounded-xl"
-                >
-                  <option value="CCS2">CCS2 (DC Fast Charging)</option>
-                  <option value="Type 2">Type 2 (AC Charging)</option>
-                  <option value="CHAdeMO">CHAdeMO</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">Power Output (kW)</label>
+                  <label className="text-xs font-bold text-[var(--text-muted)] block mb-1">Charger Name / Bay *</label>
                   <input
-                    type="number"
-                    value={powerKw}
-                    onChange={(e) => setPowerKw(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 text-white p-2.5 rounded-xl font-mono font-bold"
+                    type="text"
                     required
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs rounded-xl p-2.5"
+                    placeholder="e.g. Bay 01 (CCS2 60kW)"
                   />
                 </div>
+
                 <div>
-                  <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">Price / kWh (₹)</label>
+                  <label className="text-xs font-bold text-[var(--text-muted)] block mb-1">Max Power Output (kW) *</label>
                   <input
                     type="number"
-                    value={pricePerKwh}
-                    onChange={(e) => setPricePerKwh(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 text-white p-2.5 rounded-xl font-mono font-bold"
                     required
+                    value={formData.powerRating}
+                    onChange={(e) => setFormData({ ...formData, powerRating: e.target.value })}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs rounded-xl p-2.5 font-mono font-bold"
+                    placeholder="60"
                   />
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-[var(--text-muted)] block mb-1">Charger Type</label>
+                  <select
+                    value={formData.chargerType}
+                    onChange={(e) => setFormData({ ...formData, chargerType: e.target.value })}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs rounded-xl p-2.5 font-bold"
+                  >
+                    <option value="DC_FAST">DC Fast Charger</option>
+                    <option value="AC">AC Level 2</option>
+                    <option value="CCS2">CCS Type 2</option>
+                    <option value="TYPE2">Type 2 AC</option>
+                    <option value="CHADEMO">CHAdeMO</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-[var(--text-muted)] block mb-1">Connector Standard</label>
+                  <select
+                    value={formData.connectorType}
+                    onChange={(e) => setFormData({ ...formData, connectorType: e.target.value })}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs rounded-xl p-2.5 font-bold"
+                  >
+                    <option value="CCS2">CCS2 (Combo 2)</option>
+                    <option value="Type 2">Type 2 (IEC 62196)</option>
+                    <option value="CHAdeMO">CHAdeMO</option>
+                    <option value="GB/T">GB/T</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-800 text-white font-bold"
+                  className="flex-1 py-2.5 rounded-xl bg-[var(--bg-surface-raised)] text-xs font-bold text-[var(--text-primary)]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-cyan-500 text-slate-950 font-bold"
+                  disabled={submitting}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-500/20 cursor-pointer"
                 >
-                  Save Charger
+                  {submitting ? "Registering..." : "Register Charger"}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: OCPP Simulator Controls */}
+      {simulatorModalCharger && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] w-full max-w-md rounded-3xl p-6 space-y-4 shadow-2xl animate-fade-in text-[var(--text-primary)]">
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
+              <h3 className="text-base font-bold text-[var(--text-primary)] flex items-center gap-2 font-mono">
+                <Sliders size={18} className="text-purple-500" />
+                Simulate: {simulatorModalCharger.charger_id || simulatorModalCharger.chargerId}
+              </h3>
+              <button
+                onClick={() => setSimulatorModalCharger(null)}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="text-xs text-[var(--text-muted)]">
+              Trigger instant OCPP 2.0.1 status transitions to test live synchronization across Customer, Owner, and Admin dashboards:
+            </p>
+
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
+              <button
+                onClick={() => handleSimulatorAction(simulatorModalCharger.charger_id || simulatorModalCharger.id, "AVAILABLE")}
+                className="p-3 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold text-left transition cursor-pointer flex items-center justify-between"
+              >
+                <span>Available</span>
+                <CheckCircle2 size={14} />
+              </button>
+
+              <button
+                onClick={() => handleSimulatorAction(simulatorModalCharger.charger_id || simulatorModalCharger.id, "CHARGING", 50)}
+                className="p-3 rounded-2xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-xs font-bold text-left transition cursor-pointer flex items-center justify-between"
+              >
+                <span>Charging (50kW)</span>
+                <Play size={14} />
+              </button>
+
+              <button
+                onClick={() => handleSimulatorAction(simulatorModalCharger.charger_id || simulatorModalCharger.id, "RESERVED")}
+                className="p-3 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-bold text-left transition cursor-pointer flex items-center justify-between"
+              >
+                <span>Reserved</span>
+                <Activity size={14} />
+              </button>
+
+              <button
+                onClick={() => handleSimulatorAction(simulatorModalCharger.charger_id || simulatorModalCharger.id, "FAULTED", 0, "GROUND_FAULT")}
+                className="p-3 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-xs font-bold text-left transition cursor-pointer flex items-center justify-between"
+              >
+                <span>Faulted</span>
+                <ShieldAlert size={14} />
+              </button>
+
+              <button
+                onClick={() => handleSimulatorAction(simulatorModalCharger.charger_id || simulatorModalCharger.id, "MAINTENANCE")}
+                className="p-3 rounded-2xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 text-xs font-bold text-left transition cursor-pointer flex items-center justify-between"
+              >
+                <span>Maintenance</span>
+                <Wrench size={14} />
+              </button>
+
+              <button
+                onClick={() => handleSimulatorAction(simulatorModalCharger.charger_id || simulatorModalCharger.id, "OFFLINE")}
+                className="p-3 rounded-2xl bg-slate-500/10 hover:bg-slate-500/20 text-slate-600 dark:text-slate-400 border border-slate-500/30 text-xs font-bold text-left transition cursor-pointer flex items-center justify-between"
+              >
+                <span>Offline</span>
+                <Power size={14} />
+              </button>
+            </div>
+
+            <button
+              onClick={() => setSimulatorModalCharger(null)}
+              className="w-full py-2.5 rounded-xl bg-[var(--bg-surface-raised)] text-xs font-bold text-[var(--text-primary)] mt-2"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}

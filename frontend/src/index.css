@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./styles/theme.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -13,6 +14,7 @@
   --text-muted: #64748B;
   --border-subtle: #E2E8F0;
   --border-card: #E2E8F0;
+  --border-color: #E2E8F0;
 
   --accent-primary: #2563EB;
   --accent-hover: #1D4ED8;
@@ -40,6 +42,7 @@ html.dark, .dark {
   --text-muted: #94A3B8;
   --border-subtle: #1E293B;
   --border-card: #1E293B;
+  --border-color: #1E293B;
 
   --accent-primary: #3B82F6;
   --accent-hover: #2563EB;
@@ -194,6 +197,14 @@ html[data-font-size="xl"] {
 .leaflet-container {
   background-color: var(--bg-page) !important;
   font-family: 'Inter', sans-serif !important;
+}
+
+/* Keyless High-Performance Dark Mode Map Tiles */
+.map-tiles-dark img.leaflet-tile,
+.dark-mode-tiles img.leaflet-tile,
+.dark .leaflet-container .map-tiles-dark img,
+img.map-tiles-dark {
+  filter: invert(100%) hue-rotate(180deg) brightness(85%) contrast(92%) !important;
 }
 
 .leaflet-popup-content-wrapper {

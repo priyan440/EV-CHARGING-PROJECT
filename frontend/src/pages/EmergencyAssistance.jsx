@@ -74,12 +74,12 @@ export default function EmergencyAssistance() {
     setTimeout(() => {
       const ticket = emergencyService.requestRoadsideAssistance({
         counterId: customerId,
-        customerName: currentUser?.name || "Priyan",
-        customerPhone: currentUser?.mobile || "+91 9876543210",
-        vehicleModel: activeVehicle ? `${activeVehicle.brand} ${activeVehicle.model}` : "EV Vehicle",
-        vehicleNumber: activeVehicle?.vehicleNumber || "TN58AB1234",
+        customerName: currentUser?.name || "Customer",
+        customerPhone: currentUser?.mobile || currentUser?.phone || "",
+        vehicleModel: activeVehicle ? `${activeVehicle.brand || ''} ${activeVehicle.model || ''}`.trim() : "EV Vehicle",
+        vehicleNumber: activeVehicle?.vehicleNumber || "N/A",
         currentSoc: simulatedSoc,
-        location: currentLocation?.address || "Anna Salai, Chennai",
+        location: currentLocation?.address || "Current Location",
         latitude: currentLocation?.latitude || 13.0827,
         longitude: currentLocation?.longitude || 80.2707,
       });
@@ -113,22 +113,22 @@ export default function EmergencyAssistance() {
       )}
 
       {/* Emergency Header Banner */}
-      <div className="p-6 md:p-8 rounded-3xl bg-gradient-to-r from-[#200B0B] via-[#2F1111] to-[#1F0C1B] border border-red-900/60 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="theme-card p-6 md:p-8 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 border-red-500/30">
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <span className="px-3 py-1 text-[10px] font-black uppercase font-mono tracking-wider bg-red-500/20 text-red-400 rounded-full border border-red-500/30 flex items-center gap-1.5 animate-pulse">
-              <ShieldAlert size={12} className="text-red-400" /> EMERGENCY EV ASSISTANCE PROTOCOL
+            <span className="px-3 py-1 text-[10px] font-black uppercase font-mono tracking-wider bg-red-500/10 text-red-600 dark:text-red-400 rounded-full border border-red-500/30 flex items-center gap-1.5 animate-pulse">
+              <ShieldAlert size={12} className="text-red-500" /> EMERGENCY EV ASSISTANCE PROTOCOL
             </span>
-            <span className="px-3 py-1 text-[10px] font-extrabold font-mono tracking-wider bg-amber-500/20 text-amber-400 rounded-full border border-amber-500/30">
+            <span className="px-3 py-1 text-[10px] font-extrabold font-mono tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-full border border-amber-500/30">
               PRIORITY: CRITICAL
             </span>
           </div>
 
-          <h1 className="text-2xl md:text-3xl font-extrabold text-white flex items-center gap-2.5">
+          <h1 className="text-2xl md:text-3xl font-extrabold text-[var(--text-primary)] flex items-center gap-2.5">
             <AlertTriangle className="text-red-500 shrink-0" size={28} /> Emergency Low Battery & Rescue
           </h1>
 
-          <p className="text-xs text-slate-300 mt-1 max-w-2xl">
+          <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-2xl">
             Real-time emergency routing to nearest operational fast chargers, alternative grid stations, and 24/7 mobile rapid-charge roadside assistance dispatch.
           </p>
         </div>
@@ -136,7 +136,7 @@ export default function EmergencyAssistance() {
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => navigate(-1)}
-            className="px-4 py-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700 text-white font-bold text-xs uppercase tracking-wider transition border border-slate-700 cursor-pointer"
+            className="theme-input hover:border-red-500 font-bold text-xs uppercase tracking-wider transition cursor-pointer"
           >
             Cancel / Back
           </button>
@@ -159,7 +159,7 @@ export default function EmergencyAssistance() {
               <BatteryCharging size={16} className="text-red-500" /> Vehicle Battery Situation
             </span>
             <h3 className="text-lg font-black text-slate-900 dark:text-white mt-1">
-              {activeVehicle ? `${activeVehicle.brand} ${activeVehicle.model}` : "EV Vehicle"} ({activeVehicle?.vehicleNumber || "TN58AB1234"})
+              {activeVehicle ? `${activeVehicle.brand || ''} ${activeVehicle.model || ''}`.trim() : "EV Vehicle"} ({activeVehicle?.vehicleNumber || "N/A"})
             </h3>
           </div>
 

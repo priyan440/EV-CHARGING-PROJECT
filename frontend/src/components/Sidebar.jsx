@@ -28,9 +28,14 @@ import {
   BrainCircuit,
   Lock,
   Globe,
+  Flame,
+  Box,
+  Bell,
+  DollarSign,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import ThemeToggle from "./ThemeToggle";
+import { getActiveChargingSession } from "../services/chargingService";
 
 export default function Sidebar({ isOpen, onClose }) {
   const location = useLocation();
@@ -42,68 +47,91 @@ export default function Sidebar({ isOpen, onClose }) {
 
   useEffect(() => {
     if (r === "CUSTOMER" || r === "USER") {
-      import("../services/chargingService").then(({ getActiveChargingSession }) => {
-        getActiveChargingSession().then((res) => {
+      getActiveChargingSession()
+        .then((res) => {
           setHasActiveCharging(Boolean(res?.active && res?.session));
-        }).catch(() => {});
-      });
+        })
+        .catch(() => {});
     }
   }, [location.pathname, r]);
 
   const customerLinks = [
-    { label: "Dashboard", path: "/customer/dashboard", icon: LayoutDashboard },
-    { label: "Live EV Map", path: "/customer/map", icon: Globe },
-    { label: "Find Stations", path: "/customer/stations", icon: MapPin },
-    { label: "Book Charging", path: "/customer/book", icon: CalendarCheck },
-    { label: "My Bookings", path: "/customer/bookings", icon: ClipboardList },
-    { label: "Live Charging", path: "/customer/live-charging", icon: Activity, badge: hasActiveCharging ? "ACTIVE" : null },
-    { label: "Charging History", path: "/customer/history", icon: History },
-    { label: "Payments", path: "/customer/payments", icon: CreditCard },
-    { label: "My Vehicles", path: "/customer/vehicles", icon: Car },
-    { label: "Vehicle Health", path: "/customer/vehicle-health", icon: BatteryCharging },
-    { label: "Charging Simulator", path: "/customer/charging-simulator", icon: Zap },
-    { label: "Emergency Assistance", path: "/customer/emergency-assistance", icon: AlertTriangle },
+    { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+    { label: "My Vehicles", path: "/vehicles", icon: Car },
+    { label: "Find Stations", path: "/stations", icon: MapPin },
+    { label: "Book Charging", path: "/book-slot", icon: CalendarCheck },
+    { label: "My Bookings", path: "/my-bookings", icon: ClipboardList },
+    { label: "Charging Sessions", path: "/sessions", icon: Activity, badge: hasActiveCharging ? "ACTIVE" : null },
+    { label: "Charging History", path: "/history", icon: History },
+    { label: "Payments", path: "/payments", icon: CreditCard },
+    { label: "Live EV Map", path: "/map", icon: Globe },
+    { label: "Vehicle Health", path: "/vehicle-health", icon: BatteryCharging },
+    { label: "Emergency Assistance", path: "/emergency-assistance", icon: AlertTriangle },
     { label: "Reviews", path: "/customer/reviews", icon: Star },
     { label: "Complaints", path: "/customer/complaints", icon: AlertTriangle },
-    { label: "Security Center", path: "/security", icon: Lock },
-    { label: "Profile", path: "/customer/profile", icon: User },
-    { label: "Settings", path: "/customer/settings", icon: Settings },
+    { label: "Profile", path: "/profile", icon: User },
+    { label: "Settings", path: "/settings", icon: Settings },
   ];
 
   const ownerLinks = [
     { label: "Dashboard", path: "/owner/dashboard", icon: LayoutDashboard },
-    { label: "Control Center", path: "/owner/control-center", icon: Activity },
-    { label: "AI Intelligence", path: "/owner/ai-dashboard", icon: BrainCircuit },
-    { label: "Demand Forecast", path: "/owner/demand-forecast", icon: TrendingUp },
-    { label: "QR Scanner", path: "/owner/scanner", icon: Cpu },
     { label: "My Stations", path: "/owner/stations", icon: Building2 },
-    { label: "Chargers", path: "/owner/chargers", icon: Cpu },
+    { label: "Station Map", path: "/owner/map", icon: Globe },
+    { label: "Chargers & Simulator", path: "/owner/chargers", icon: Cpu },
     { label: "Bookings", path: "/owner/bookings", icon: CalendarCheck },
-    { label: "Live Status", path: "/owner/sessions", icon: Activity },
-    { label: "Revenue", path: "/owner/revenue", icon: TrendingUp },
-    { label: "Maintenance", path: "/owner/maintenance", icon: Wrench },
-    { label: "Customer Reviews", path: "/owner/reviews", icon: Star },
-    { label: "Security Center", path: "/security", icon: Lock },
+    { label: "Live Sessions", path: "/owner/sessions", icon: Activity },
+    { label: "Customers", path: "/owner/customers", icon: Users },
+    { label: "Tariffs", path: "/owner/tariffs", icon: CreditCard },
+    { label: "Revenue & Payouts", path: "/owner/revenue", icon: TrendingUp },
+    { label: "Complaints", path: "/owner/complaints", icon: AlertTriangle },
+    { label: "Maintenance & Faults", path: "/owner/maintenance", icon: Wrench },
+    { label: "Smart Load Balance", path: "/owner/smart-load", icon: Zap },
+    { label: "Analytics", path: "/owner/analytics", icon: PieChart },
+    { label: "Reports", path: "/owner/reports", icon: FileText },
+    { label: "Notifications", path: "/owner/notifications", icon: Bell },
+    { label: "Audit Logs", path: "/owner/audit-logs", icon: ClipboardList },
+    { label: "AI Assistant", path: "/owner/ai-dashboard", icon: BrainCircuit },
+    { label: "QR Scanner", path: "/owner/scanner", icon: Cpu },
     { label: "Profile", path: "/owner/profile", icon: User },
     { label: "Settings", path: "/owner/settings", icon: Settings },
   ];
 
   const adminLinks = [
     { label: "Dashboard", path: "/admin/dashboard", icon: LayoutDashboard },
-    { label: "Control Center", path: "/admin/control-center", icon: Activity },
     { label: "Users", path: "/admin/users", icon: Users },
-    { label: "Station Owners", path: "/admin/owners", icon: ShieldCheck },
     { label: "Stations", path: "/admin/stations", icon: Building2 },
     { label: "Chargers", path: "/admin/chargers", icon: Cpu },
     { label: "Bookings", path: "/admin/bookings", icon: CalendarCheck },
     { label: "Live Sessions", path: "/admin/sessions", icon: Activity },
     { label: "Payments", path: "/admin/payments", icon: CreditCard },
+    { label: "Pricing & Tariffs", path: "/admin/pricing", icon: DollarSign },
+    { label: "Control Center", path: "/admin/control-center", icon: Activity },
+    { label: "Station Owners", path: "/admin/owners", icon: ShieldCheck },
+    { label: "Technicians", path: "/admin/technicians", icon: Wrench },
+    { label: "Complaints", path: "/admin/complaints", icon: AlertTriangle },
     { label: "Maintenance", path: "/admin/maintenance", icon: Wrench },
     { label: "Reports", path: "/admin/reports", icon: FileText },
     { label: "Analytics", path: "/admin/analytics", icon: PieChart },
     { label: "Audit Logs", path: "/admin/audit-logs", icon: ClipboardList },
     { label: "Security Center", path: "/security", icon: Lock },
+    { label: "Profile", path: "/admin/profile", icon: User },
     { label: "Settings", path: "/admin/settings", icon: Settings },
+  ];
+
+  const technicianLinks = [
+    { label: "Dashboard", path: "/technician/dashboard?tab=overview", icon: LayoutDashboard },
+    { label: "Assigned Stations", path: "/technician/dashboard?tab=stations", icon: Building2 },
+    { label: "Maintenance Tasks", path: "/technician/dashboard?tab=tasks", icon: Wrench },
+    { label: "Station Health", path: "/technician/dashboard?tab=health", icon: Activity },
+    { label: "Fault Reports", path: "/technician/dashboard?tab=faults", icon: AlertTriangle },
+    { label: "Repair Requests", path: "/technician/dashboard?tab=repairs", icon: ClipboardList },
+    { label: "Scheduled Maintenance", path: "/technician/dashboard?tab=schedules", icon: CalendarCheck },
+    { label: "Emergency Issues", path: "/technician/dashboard?tab=emergencies", icon: Flame },
+    { label: "Spare Parts", path: "/technician/dashboard?tab=parts", icon: Box },
+    { label: "Work History", path: "/technician/dashboard?tab=history", icon: History },
+    { label: "Notifications", path: "/technician/dashboard?tab=notifications", icon: Bell },
+    { label: "Profile", path: "/technician/dashboard?tab=profile", icon: User },
+    { label: "Security Center", path: "/security", icon: Lock },
   ];
 
   let currentLinks = customerLinks;
@@ -118,6 +146,10 @@ export default function Sidebar({ isOpen, onClose }) {
     currentLinks = adminLinks;
     roleTitle = "ADMIN COMMAND CENTER";
     badgeColor = "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30";
+  } else if (r === "TECHNICIAN" || r === "TECH") {
+    currentLinks = technicianLinks;
+    roleTitle = "FIELD TECHNICIAN CONSOLE";
+    badgeColor = "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30";
   }
 
   return (
@@ -172,16 +204,16 @@ export default function Sidebar({ isOpen, onClose }) {
               {currentUser?.name ? currentUser.name[0].toUpperCase() : "U"}
             </div>
           )}
-          <div className="overflow-hidden">
+          <div className="overflow-hidden flex-1 min-w-0">
             <div className="text-sm font-bold text-[var(--text-primary)] truncate">
               {currentUser?.name || "EV User"}
             </div>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border ${badgeColor}`}>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+              <span className={`text-[9px] uppercase font-mono font-bold px-1.5 py-0.5 rounded border ${badgeColor}`}>
                 {roleTitle}
               </span>
-              <span className="text-xs font-mono text-[var(--accent-primary)] font-bold">
-                {currentUser?.counterId || "CUS0001"}
+              <span className="text-[10px] font-mono text-[var(--accent-primary)] font-bold">
+                {currentUser?.counterId || currentUser?.user_id || "ADM000001"}
               </span>
             </div>
           </div>

@@ -12,8 +12,6 @@
     "frontend": "npm run dev --prefix frontend",
     "backend": "npm start --prefix backend",
     "server": "node backend/server.js",
-    "seed": "node backend/config/seed.js",
-    "seed:bookings": "node backend/database/seed_bookings.js",
     "build": "npm run build --prefix frontend",
     "build:frontend": "npm run build --prefix frontend",
     "lint": "npm run lint --prefix frontend",

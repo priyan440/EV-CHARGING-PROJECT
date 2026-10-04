@@ -6,13 +6,17 @@ import {
   updateSlot,
   updateSlotStatus,
   deleteSlot,
+  getChargerTimeline,
+  getEarliestSlot,
 } from "../controllers/slotController.js";
 import { authenticate } from "../middleware/authMiddleware.js";
 import { authorizeRoles } from "../middleware/roleMiddleware.js";
 
 const router = express.Router();
 
-// Public Slot Routes
+// Public Slot & Dynamic Timeline Routes
+router.get("/timeline", getChargerTimeline);
+router.get("/earliest", getEarliestSlot);
 router.get("/station/:stationId", getSlotsByStation);
 router.get("/:id", getSlotById);
 

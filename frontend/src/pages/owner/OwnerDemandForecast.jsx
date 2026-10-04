@@ -72,24 +72,24 @@ export default function OwnerDemandForecast() {
   if (forecast.insufficientData) {
     return (
       <div className="space-y-6">
-        <div className="p-6 md:p-8 rounded-3xl bg-gradient-to-r from-[#0B1329] via-[#0D1F3C] to-[#082830] border border-slate-800 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="theme-card p-6 md:p-8 rounded-3xl shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <span className="px-3 py-1 text-[10px] font-extrabold uppercase font-mono tracking-wider bg-amber-500/20 text-amber-400 rounded-full border border-amber-500/30 flex items-center gap-1.5">
-                <AlertTriangle size={12} className="text-amber-400" /> INSUFFICIENT DATA
+              <span className="px-3 py-1 text-[10px] font-extrabold uppercase font-mono tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-full border border-amber-500/30 flex items-center gap-1.5">
+                <AlertTriangle size={12} className="text-amber-500" /> INSUFFICIENT DATA
               </span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-white">
+            <h1 className="text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
               Charging Demand Forecasting
             </h1>
-            <p className="text-xs text-slate-300 mt-1 max-w-2xl">
+            <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-2xl">
               Authentic demand prediction requires historical session data to identify cyclical patterns.
             </p>
           </div>
 
           <button
             onClick={() => navigate("/owner/ai-dashboard")}
-            className="px-4 py-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700 text-white font-bold text-xs uppercase tracking-wider transition border border-slate-700 cursor-pointer self-start md:self-auto"
+            className="theme-input hover:border-cyan-500 font-bold text-xs uppercase tracking-wider transition cursor-pointer self-start md:self-auto"
           >
             ← AI Dashboard
           </button>
@@ -138,25 +138,25 @@ export default function OwnerDemandForecast() {
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="p-6 md:p-8 rounded-3xl bg-gradient-to-r from-[#0B1329] via-[#0D1F3C] to-[#082830] border border-slate-800 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="theme-card p-6 md:p-8 rounded-3xl shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex flex-wrap items-center gap-2 mb-2">
-            <span className="px-3 py-1 text-[10px] font-extrabold uppercase font-mono tracking-wider bg-cyan-500/20 text-cyan-400 rounded-full border border-cyan-500/30 flex items-center gap-1.5">
-              <Sparkles size={12} className="text-cyan-400" /> REAL FORECAST ENGINE
+            <span className="px-3 py-1 text-[10px] font-extrabold uppercase font-mono tracking-wider bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-full border border-cyan-500/30 flex items-center gap-1.5">
+              <Sparkles size={12} className="text-cyan-500" /> REAL FORECAST ENGINE
             </span>
-            <span className="px-3 py-1 text-[10px] font-extrabold font-mono tracking-wider bg-emerald-500/20 text-emerald-400 rounded-full border border-emerald-500/30 flex items-center gap-1">
+            <span className="px-3 py-1 text-[10px] font-extrabold font-mono tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full border border-emerald-500/30 flex items-center gap-1">
               <Target size={11} /> ACCURACY: {accuracyNum}%
             </span>
-            <span className="px-3 py-1 text-[10px] font-extrabold font-mono tracking-wider bg-purple-500/20 text-purple-400 rounded-full border border-purple-500/30">
+            <span className="px-3 py-1 text-[10px] font-extrabold font-mono tracking-wider bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-full border border-purple-500/30">
               MAPE: {typeof mapeNum === "number" ? `${mapeNum}%` : mapeNum}
             </span>
           </div>
 
-          <h1 className="text-2xl md:text-3xl font-extrabold text-white">
+          <h1 className="text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
             Charging Demand Forecasting
           </h1>
 
-          <p className="text-xs text-slate-300 mt-1 max-w-2xl">
+          <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-2xl">
             Forecast upcoming grid loads, peak queue congestion, and connector demand based on seasonal moving average with weekly seasonality (s=7).
           </p>
         </div>
@@ -165,14 +165,14 @@ export default function OwnerDemandForecast() {
           <button
             onClick={loadData}
             title="Recalculate forecast"
-            className="p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700 text-white font-bold text-xs uppercase tracking-wider transition border border-slate-700 cursor-pointer flex items-center gap-1.5"
+            className="p-3 rounded-2xl theme-input hover:border-cyan-500 font-bold text-xs uppercase tracking-wider transition cursor-pointer flex items-center gap-1.5 shadow-sm"
           >
             <RefreshCw size={14} />
             <span className="hidden sm:inline">Refresh</span>
           </button>
           <button
             onClick={() => navigate("/owner/ai-dashboard")}
-            className="px-4 py-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700 text-white font-bold text-xs uppercase tracking-wider transition border border-slate-700 cursor-pointer"
+            className="px-4 py-3 rounded-2xl theme-input hover:border-cyan-500 font-bold text-xs uppercase tracking-wider transition cursor-pointer shadow-sm"
           >
             ← AI Dashboard
           </button>

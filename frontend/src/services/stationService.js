@@ -65,6 +65,17 @@ export const stationService = {
     }
   },
 
+  // Get connectors for a station
+  getStationConnectors: async (stationId) => {
+    try {
+      const res = await api.get(`/stations/${stationId}/connectors`);
+      return res.data;
+    } catch (err) {
+      console.warn("stationService getStationConnectors notice:", err.message);
+      return { success: false, data: [] };
+    }
+  },
+
   // Get live power status for Station Owner Power Management
   getStationPowerStatus: async (stationId) => {
     try {

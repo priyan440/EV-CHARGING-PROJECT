@@ -55,8 +55,9 @@ export default function LocationPickerMap({
     }
   };
 
-  const tileUrl = isDark
-    ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+  const mapApiKey = import.meta.env.VITE_MAP_API_KEY || import.meta.env.VITE_CARTO_API_KEY || "";
+  const tileUrl = isDark && mapApiKey
+    ? `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=${mapApiKey}`
     : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
   return (
@@ -92,7 +93,11 @@ export default function LocationPickerMap({
           style={{ width: "100%", height: "100%" }}
           scrollWheelZoom={false}
         >
-          <TileLayer url={tileUrl} />
+          <TileLayer
+            key={`${tileUrl}_${isDark ? "dark" : "light"}`}
+            url={tileUrl}
+            className={isDark && !mapApiKey ? "map-tiles-dark" : ""}
+          />
           <MapClickHandler onLocationSelect={handleMapClick} />
           <Marker position={[lat, lng]} />
         </MapContainer>

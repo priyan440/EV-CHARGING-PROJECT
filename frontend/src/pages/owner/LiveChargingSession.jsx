@@ -49,33 +49,33 @@ export default function LiveChargingSession() {
   return (
     <div className="max-w-3xl mx-auto space-y-6 font-inter">
       {/* Header Banner */}
-      <div className="p-6 md:p-8 rounded-3xl bg-[#0B132B] border border-[#10B981]/40 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
+      <div className="theme-card p-6 md:p-8 rounded-3xl shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded border ${
               isCompleted
-                ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-                : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 animate-pulse"
+                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border-emerald-500/30"
+                : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border-emerald-500/30 animate-pulse"
             }`}>
               {isCompleted ? "SESSION COMPLETED" : "LIVE CHARGING IN PROGRESS ⚡"}
             </span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-white font-grotesk flex items-center gap-2">
-            <BatteryCharging size={32} className="text-emerald-400" /> EV Charging Controller
+          <h1 className="text-2xl md:text-3xl font-extrabold text-[var(--text-primary)] font-grotesk flex items-center gap-2">
+            <BatteryCharging size={32} className="text-emerald-500" /> EV Charging Controller
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-[var(--text-secondary)] mt-1">
             Real-time session diagnostics: power output (kW), energy delivered (kWh), vehicle battery percentage, and timer.
           </p>
         </div>
 
         <div className="px-5 py-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-center">
-          <span className="text-[10px] text-slate-400 font-bold uppercase block">Booking Reference</span>
-          <span className="text-xl font-black text-emerald-400 font-mono">{bookingId || "EVB000001"}</span>
+          <span className="text-[10px] text-[var(--text-muted)] font-bold uppercase block">Booking Reference</span>
+          <span className="text-xl font-black text-emerald-600 dark:text-emerald-400 font-mono">{bookingId || "EVB000001"}</span>
         </div>
       </div>
 
       {/* Main Diagnostic Gauge Panel */}
-      <div className="p-8 rounded-3xl bg-slate-950 border border-slate-800 shadow-2xl space-y-6 text-center">
+      <div className="theme-card p-8 rounded-3xl shadow-2xl space-y-6 text-center">
         {/* Ring Battery Display */}
         <div className="relative w-44 h-44 mx-auto flex items-center justify-center">
           <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
@@ -83,7 +83,7 @@ export default function LiveChargingSession() {
               cx="50"
               cy="50"
               r="42"
-              className="text-slate-900 stroke-current"
+              className="text-[var(--border-subtle)] stroke-current"
               strokeWidth="10"
               fill="transparent"
             />
@@ -91,7 +91,7 @@ export default function LiveChargingSession() {
               cx="50"
               cy="50"
               r="42"
-              className="text-emerald-400 stroke-current transition-all duration-500"
+              className="text-emerald-500 stroke-current transition-all duration-500"
               strokeWidth="10"
               strokeDasharray="263.89"
               strokeDashoffset={263.89 - (263.89 * currentBattery) / 100}
@@ -100,42 +100,42 @@ export default function LiveChargingSession() {
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center font-grotesk">
-            <span className="text-3xl font-black text-white font-mono">{currentBattery}%</span>
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">EV Battery</span>
+            <span className="text-3xl font-black text-[var(--text-primary)] font-mono">{currentBattery}%</span>
+            <span className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-wider">EV Battery</span>
           </div>
         </div>
 
         {/* Live Gauges Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-mono">
-          <div className="p-4 rounded-2xl bg-[#0B132B] border border-slate-800">
-            <span className="text-[10px] text-slate-400 uppercase font-bold block">Elapsed Time</span>
-            <span className="text-lg font-black text-white mt-1 block">{formatTime(elapsedSeconds)}</span>
+          <div className="p-4 rounded-2xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)]">
+            <span className="text-[10px] text-[var(--text-muted)] uppercase font-bold block">Elapsed Time</span>
+            <span className="text-lg font-black text-[var(--text-primary)] mt-1 block">{formatTime(elapsedSeconds)}</span>
           </div>
-          <div className="p-4 rounded-2xl bg-[#0B132B] border border-slate-800">
-            <span className="text-[10px] text-slate-400 uppercase font-bold block">Power Output</span>
-            <span className="text-lg font-black text-cyan-300 mt-1 block">{chargingKw} kW</span>
+          <div className="p-4 rounded-2xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)]">
+            <span className="text-[10px] text-[var(--text-muted)] uppercase font-bold block">Power Output</span>
+            <span className="text-lg font-black text-blue-600 dark:text-cyan-300 mt-1 block">{chargingKw} kW</span>
           </div>
-          <div className="p-4 rounded-2xl bg-[#0B132B] border border-slate-800">
-            <span className="text-[10px] text-slate-400 uppercase font-bold block">Energy Delivered</span>
-            <span className="text-lg font-black text-emerald-400 mt-1 block">{kwhDelivered} kWh</span>
+          <div className="p-4 rounded-2xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)]">
+            <span className="text-[10px] text-[var(--text-muted)] uppercase font-bold block">Energy Delivered</span>
+            <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-1 block">{kwhDelivered} kWh</span>
           </div>
-          <div className="p-4 rounded-2xl bg-[#0B132B] border border-slate-800">
-            <span className="text-[10px] text-slate-400 uppercase font-bold block">Session Tariff</span>
-            <span className="text-lg font-black text-amber-300 mt-1 block">₹{booking?.totalAmount || 416}</span>
+          <div className="p-4 rounded-2xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)]">
+            <span className="text-[10px] text-[var(--text-muted)] uppercase font-bold block">Session Tariff</span>
+            <span className="text-lg font-black text-amber-500 mt-1 block">₹{booking?.totalAmount || 416}</span>
           </div>
         </div>
 
         {/* Customer & Vehicle Specs */}
-        <div className="bg-[#0B132B] p-4 rounded-2xl border border-slate-800 text-left grid grid-cols-2 gap-4 text-xs">
+        <div className="bg-[var(--bg-surface-raised)] p-4 rounded-2xl border border-[var(--border-subtle)] text-left grid grid-cols-2 gap-4 text-xs">
           <div>
-            <span className="text-[10px] text-slate-400 uppercase font-bold block">Customer & Driver</span>
-            <span className="font-extrabold text-white text-sm">{booking?.customerName || "Priyan Customer"}</span>
-            <div className="text-[11px] text-slate-400 font-mono mt-0.5">Vehicle: <strong className="text-emerald-400">{booking?.vehicleNumber || "TN58AB1234"}</strong></div>
+            <span className="text-[10px] text-[var(--text-muted)] uppercase font-bold block">Customer & Driver</span>
+            <span className="font-extrabold text-[var(--text-primary)] text-sm">{booking?.customerName || booking?.userName || "Customer"}</span>
+            <div className="text-[11px] text-[var(--text-muted)] font-mono mt-0.5">Vehicle: <strong className="text-emerald-600 dark:text-emerald-400">{booking?.vehicleNumber || booking?.registrationNumber || "-"}</strong></div>
           </div>
           <div>
-            <span className="text-[10px] text-slate-400 uppercase font-bold block">Station & Charger</span>
-            <span className="font-extrabold text-white text-sm">{booking?.stationName || "EV Power Hub"}</span>
-            <div className="text-[11px] text-slate-400 font-mono mt-0.5">Connector: <strong className="text-cyan-300">{booking?.connectorType || "CCS2"} (DC Fast)</strong></div>
+            <span className="text-[10px] text-[var(--text-muted)] uppercase font-bold block">Station & Charger</span>
+            <span className="font-extrabold text-[var(--text-primary)] text-sm">{booking?.stationName || "Charging Station"}</span>
+            <div className="text-[11px] text-[var(--text-muted)] font-mono mt-0.5">Connector: <strong className="text-blue-600 dark:text-cyan-300">{booking?.connectorType || "CCS2"}</strong></div>
           </div>
         </div>
 
@@ -143,12 +143,12 @@ export default function LiveChargingSession() {
         {!isCompleted ? (
           <button
             onClick={handleStopCharging}
-            className="w-full py-4 px-6 bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs uppercase tracking-wider font-grotesk rounded-2xl transition shadow-lg shadow-rose-950/50 flex items-center justify-center gap-2"
+            className="w-full py-4 px-6 bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs uppercase tracking-wider font-grotesk rounded-2xl transition shadow-lg shadow-rose-950/50 flex items-center justify-center gap-2 cursor-pointer"
           >
             <Square size={16} className="fill-white" /> Stop & Complete Charging Session
           </button>
         ) : (
-          <div className="p-4 bg-emerald-500/20 border border-emerald-500/40 rounded-2xl text-emerald-300 text-xs font-bold flex items-center justify-center gap-2">
+          <div className="p-4 bg-emerald-500/10 border border-emerald-500/40 rounded-2xl text-emerald-600 dark:text-emerald-300 text-xs font-bold flex items-center justify-center gap-2">
             <CheckCircle2 size={18} /> Charging Session Completed. Billing Finalized.
           </div>
         )}

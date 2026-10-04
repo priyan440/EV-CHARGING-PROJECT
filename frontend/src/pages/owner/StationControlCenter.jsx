@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Zap,
   Activity,
@@ -20,10 +20,13 @@ import {
   ArrowRight,
   TrendingUp,
   Cpu,
+  Wifi,
+  Radio,
 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
-import { stationService } from "../../services/stationService";
+import ownerControlCenterService from "../../services/ownerControlCenterService";
 import smartReservationService from "../../services/smartReservationService";
+import socketService from "../../services/socketService";
 import SmartReservationMonitor from "../../components/SmartReservationMonitor";
 import LiveChargerGrid from "../../components/LiveChargerGrid";
 import OfflineCheckInModal from "../../components/OfflineCheckInModal";
@@ -39,6 +42,7 @@ export default function StationControlCenter() {
   const [stationData, setStationData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState("LIVE"); // LIVE | RECONNECTING | OFFLINE
   const [activeTab, setActiveTab] = useState("chargers"); // "chargers" | "reservations" | "offline" | "queue" | "audit"
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -49,19 +53,16 @@ export default function StationControlCenter() {
   const [overrideBookingId, setOverrideBookingId] = useState(null);
   const [overrideCharger, setOverrideCharger] = useState(null);
 
-  // Load Station list for owner / admin
+  // Load Station list for owner from MySQL
   const loadStations = async () => {
     try {
-      const res =
-        role === "ADMIN"
-          ? await stationService.getStations()
-          : await stationService.getMyStations();
-
-      const list = res?.data || [];
+      const res = await ownerControlCenterService.getOwnerStations();
+      const list = res?.data || res?.stations || [];
       setStations(list);
 
       if (list.length > 0 && !selectedStationId) {
-        setSelectedStationId(list[0].id);
+        const initialStationId = list[0].stationId || list[0].id || list[0]._id;
+        setSelectedStationId(initialStationId);
       }
     } catch (err) {
       console.warn("loadStations warning:", err.message);
@@ -69,40 +70,137 @@ export default function StationControlCenter() {
   };
 
   // Load full live status for selected station
-  const loadLiveStatus = async (showSpinner = false) => {
+  const loadLiveStatus = useCallback(async (showSpinner = false) => {
     if (!selectedStationId) return;
     if (showSpinner) setIsRefreshing(true);
 
     try {
-      const res = await smartReservationService.getStationLiveStatus(selectedStationId);
+      const res = await ownerControlCenterService.getControlCenter(selectedStationId);
       if (res?.success) {
         setStationData(res);
+        setConnectionStatus("LIVE");
       }
     } catch (err) {
       console.warn("loadLiveStatus error:", err.message);
+      setConnectionStatus("OFFLINE");
     } finally {
       setIsLoading(false);
       if (showSpinner) setIsRefreshing(false);
     }
-  };
+  }, [selectedStationId]);
 
   useEffect(() => {
     loadStations();
   }, [role]);
 
+  // Initial load & fallback 10s auto-sync polling
   useEffect(() => {
     if (selectedStationId) {
       setIsLoading(true);
       loadLiveStatus();
 
-      // Set periodic auto-refresh every 8 seconds
+      // Primary fallback interval every 10 seconds
       const interval = setInterval(() => {
         loadLiveStatus(false);
-      }, 8000);
+      }, 10000);
 
       return () => clearInterval(interval);
     }
-  }, [selectedStationId]);
+  }, [selectedStationId, loadLiveStatus]);
+
+  // Socket.IO real-time event listeners
+  useEffect(() => {
+    const socket = socketService.getSocket();
+    if (socket) {
+      socketService.joinOwnerDashboard();
+      if (selectedStationId) {
+        socketService.joinStation(selectedStationId);
+      }
+    }
+
+    const unsubscribeStatus = socketService.subscribeStatus((status) => {
+      if (status === "connected") setConnectionStatus("LIVE");
+      else if (status === "reconnecting") setConnectionStatus("RECONNECTING");
+      else setConnectionStatus("OFFLINE");
+    });
+
+    const handleRealtimeUpdate = (payload) => {
+      console.log("⚡ [SOCKET] Real-time update event received:", payload?.event);
+      loadLiveStatus(false);
+    };
+
+    if (socket) {
+      socket.on("charger_status_changed", handleRealtimeUpdate);
+      socket.on("charger:statusChanged", handleRealtimeUpdate);
+      socket.on("telemetry_updated", handleRealtimeUpdate);
+      socket.on("charger:chargingUpdated", handleRealtimeUpdate);
+      socket.on("session_started", handleRealtimeUpdate);
+      socket.on("charger:chargingStarted", handleRealtimeUpdate);
+      socket.on("session_stopped", handleRealtimeUpdate);
+      socket.on("charger:chargingStopped", handleRealtimeUpdate);
+      socket.on("booking_created", handleRealtimeUpdate);
+      socket.on("booking_updated", handleRealtimeUpdate);
+      socket.on("booking_cancelled", handleRealtimeUpdate);
+      socket.on("maintenance_updated", handleRealtimeUpdate);
+      socket.on("fault_detected", handleRealtimeUpdate);
+    }
+
+    return () => {
+      unsubscribeStatus();
+      if (socket) {
+        socket.off("charger_status_changed", handleRealtimeUpdate);
+        socket.off("charger:statusChanged", handleRealtimeUpdate);
+        socket.off("telemetry_updated", handleRealtimeUpdate);
+        socket.off("charger:chargingUpdated", handleRealtimeUpdate);
+        socket.off("session_started", handleRealtimeUpdate);
+        socket.off("charger:chargingStarted", handleRealtimeUpdate);
+        socket.off("session_stopped", handleRealtimeUpdate);
+        socket.off("charger:chargingStopped", handleRealtimeUpdate);
+        socket.off("booking_created", handleRealtimeUpdate);
+        socket.off("booking_updated", handleRealtimeUpdate);
+        socket.off("booking_cancelled", handleRealtimeUpdate);
+        socket.off("maintenance_updated", handleRealtimeUpdate);
+        socket.off("fault_detected", handleRealtimeUpdate);
+      }
+    };
+  }, [selectedStationId, loadLiveStatus]);
+
+  // Simulation Actions
+  const handleStartCharging = async (chargerId, extra = {}) => {
+    try {
+      const res = await ownerControlCenterService.startCharging(chargerId, {
+        stationId: selectedStationId,
+        ...extra,
+      });
+      if (res?.success) {
+        loadLiveStatus(false);
+      }
+    } catch (err) {
+      alert("Error starting charging: " + (err?.response?.data?.message || err.message));
+    }
+  };
+
+  const handleStopCharging = async (sessionId) => {
+    try {
+      const res = await ownerControlCenterService.stopCharging(sessionId);
+      if (res?.success) {
+        loadLiveStatus(false);
+      }
+    } catch (err) {
+      alert("Error stopping charging: " + (err?.response?.data?.message || err.message));
+    }
+  };
+
+  const handleSetStatus = async (chargerId, status) => {
+    try {
+      const res = await ownerControlCenterService.setChargerStatus(chargerId, status);
+      if (res?.success) {
+        loadLiveStatus(false);
+      }
+    } catch (err) {
+      alert("Error setting status: " + (err?.response?.data?.message || err.message));
+    }
+  };
 
   // Actions
   const handleCheckInBooking = async (bookingId) => {
@@ -159,9 +257,12 @@ export default function StationControlCenter() {
     } catch (err) {}
   };
 
-  const activeStationInfo = stations.find((s) => s.id === selectedStationId) || stations[0];
-  const chargerGrid = stationData?.chargerGrid || [];
-  const metrics = stationData?.metrics || {};
+  const activeStationInfo = stations.find(
+    (s) => (s.stationId || s.id || s._id) === selectedStationId
+  ) || stations[0];
+
+  const chargerGrid = stationData?.chargerGrid || stationData?.chargers || [];
+  const metrics = stationData?.metrics || stationData?.summary || {};
   const onlineBookings = stationData?.bookings || [];
   const offlineBookings = stationData?.offlineBookings || [];
   const queueEntries = stationData?.queue || [];
@@ -183,7 +284,26 @@ export default function StationControlCenter() {
               <span className="text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
                 Live Station Operation
               </span>
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span
+                className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-1.5 ${
+                  connectionStatus === "LIVE"
+                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
+                    : connectionStatus === "RECONNECTING"
+                    ? "bg-amber-500/10 text-amber-400 border border-amber-500/30"
+                    : "bg-rose-500/10 text-rose-400 border border-rose-500/30"
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    connectionStatus === "LIVE"
+                      ? "bg-emerald-500 animate-pulse"
+                      : connectionStatus === "RECONNECTING"
+                      ? "bg-amber-500 animate-bounce"
+                      : "bg-rose-500"
+                  }`}
+                />
+                ● {connectionStatus}
+              </span>
             </div>
             <h1 className="text-2xl font-black text-[var(--text-primary)] mt-1 tracking-tight">
               Station Control Center
@@ -196,17 +316,20 @@ export default function StationControlCenter() {
 
         {/* Top Controls: Station Selector & Quick Actions */}
         <div className="flex flex-wrap items-center gap-2.5 relative z-10">
-          {stations.length > 1 && (
+          {stations.length > 0 && (
             <select
               value={selectedStationId || ""}
-              onChange={(e) => setSelectedStationId(parseInt(e.target.value, 10))}
+              onChange={(e) => setSelectedStationId(e.target.value)}
               className="px-3.5 py-2.5 rounded-xl text-xs font-bold bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none shadow-sm cursor-pointer"
             >
-              {stations.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name || s.station_name || `Station #${s.id}`}
-                </option>
-              ))}
+              {stations.map((s) => {
+                const sId = s.stationId || s.id || s._id;
+                return (
+                  <option key={sId} value={sId}>
+                    {s.name || s.stationName || s.station_name || `Station ${sId}`}
+                  </option>
+                );
+              })}
             </select>
           )}
 
@@ -306,6 +429,9 @@ export default function StationControlCenter() {
             chargers={chargerGrid}
             onOpenOfflineCheckIn={(slot) => setShowOfflineModal(true)}
             onCheckInBooking={handleCheckInBooking}
+            onStartCharging={handleStartCharging}
+            onStopCharging={handleStopCharging}
+            onSetStatus={handleSetStatus}
             onReleaseSlot={(slot) => {
               if (slot.occupant?.bookingId) {
                 handleMarkNoShow(slot.occupant.bookingId);

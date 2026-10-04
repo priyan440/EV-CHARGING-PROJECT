@@ -1,665 +1,298 @@
 import { createContext, useContext, useState, useEffect } from "react";
-import {
-  getStations,
-  saveStation,
-  getBookings,
-  saveBooking,
-  updateBooking,
-  getPayments,
-  savePayment,
-  getStationOwners,
-  getCustomers,
-  getAuditLogs,
-  saveAuditLog,
-} from "../utils/storage";
-import { getNextBookingId, getNextPaymentId, getNextInvoiceId, getNextStationId, getNextChargerId } from "../utils/idGenerator";
-import { apiService } from "../services/apiService";
 import { stationService } from "../services/stationService";
 import { bookingService } from "../services/bookingService";
 import { paymentService } from "../services/paymentService";
+import { complaintService } from "../services/complaintService";
+import { walletService } from "../services/walletService";
+import { apiService } from "../services/apiService";
 
 const SystemStateContext = createContext();
 
 export function SystemStateProvider({ children }) {
-  const [stations, setStations] = useState(() => getStations());
-  const [bookings, setBookings] = useState(() => getBookings());
-  const [payments, setPayments] = useState(() => getPayments());
-  const [owners, setOwners] = useState(() => getStationOwners());
-  const [customers, setCustomers] = useState(() => getCustomers());
-  const [auditLogs, setAuditLogs] = useState(() => getAuditLogs());
-
-  // Real-time synchronization with MySQL Backend
-  useEffect(() => {
-    const loadBackendData = async () => {
-      try {
-        const [stRes, bkRes, pmRes] = await Promise.all([
-          stationService.getStations(),
-          bookingService.getBookings(),
-          paymentService.getPayments(),
-        ]);
-        if (stRes?.success && Array.isArray(stRes.data) && stRes.data.length > 0) {
-          setStations(stRes.data);
-          localStorage.setItem("ev_stations", JSON.stringify(stRes.data));
-        }
-        if (bkRes?.success && Array.isArray(bkRes.data) && bkRes.data.length > 0) {
-          setBookings(bkRes.data);
-          localStorage.setItem("ev_bookings", JSON.stringify(bkRes.data));
-        }
-        if (pmRes?.success && Array.isArray(pmRes.data) && pmRes.data.length > 0) {
-          setPayments(pmRes.data);
-          localStorage.setItem("ev_payments", JSON.stringify(pmRes.data));
-        }
-      } catch (err) {
-        console.warn("Could not sync with MySQL backend:", err);
-      }
-    };
-    loadBackendData();
-  }, []);
+  const [stations, setStations] = useState([]);
+  const [bookings, setBookings] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [owners, setOwners] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [activeSessions, setActiveSessions] = useState([]);
 
   // Customer Wallet State
-  const [wallet, setWallet] = useState(() => {
-    const saved = localStorage.getItem("ev_wallet");
-    return saved
-      ? JSON.parse(saved)
-      : {
-          balance: 850,
-          transactions: [
-            { id: "TXN_W01", type: "CREDIT", amount: 1000, description: "Initial Wallet Top-Up", date: new Date(Date.now() - 86400000 * 3).toISOString() },
-            { id: "TXN_W02", type: "DEBIT", amount: 150, description: "Payment for Booking BK000002", date: new Date(Date.now() - 86400000).toISOString() },
-          ],
-        };
+  const [wallet, setWallet] = useState({
+    balance: 850,
+    transactions: [],
   });
 
   // Loyalty Points State
-  const [loyaltyPoints, setLoyaltyPoints] = useState(() => {
-    const saved = localStorage.getItem("ev_loyalty_points");
-    return saved ? parseInt(saved, 10) : 340;
-  });
+  const [loyaltyPoints, setLoyaltyPoints] = useState(340);
 
-  // Coupons State
+  // Promotional Coupons
   const [coupons, setCoupons] = useState([
-    { code: "EVFIRST50", discountType: "FLAT", discountValue: 50, minAmount: 200, description: "₹50 FLAT off on first EV charge booking" },
-    { code: "GREEN20", discountType: "PERCENTAGE", discountValue: 20, maxDiscount: 100, minAmount: 300, description: "20% off on DC Fast Chargers" },
+    { code: "EVFIRST50", discountType: "FLAT", discountValue: 50, minAmount: 200, description: "₹50 FLAT off on EV charge booking", active: true },
+    { code: "GREEN20", discountType: "PERCENTAGE", discountValue: 20, maxDiscount: 100, minAmount: 300, description: "20% off on DC Fast Chargers", active: true },
   ]);
 
-  // Admin System Settings State
-  const [systemSettings, setSystemSettings] = useState(() => {
-    const saved = localStorage.getItem("ev_system_settings");
-    return saved
-      ? JSON.parse(saved)
-      : {
-          taxPercentage: 18,
-          serviceFee: 20,
-          platformCommissionPercent: 5,
-          bookingHoldMinutes: 10,
-          noShowGraceMinutes: 15,
-          peakPricingRateMultiplier: 1.25,
-          cancellationPolicy: {
-            moreThan2Hours: 100,
-            oneToTwoHours: 75,
-            lessThan1Hour: 50,
-          },
-        };
+  // System Settings
+  const [systemSettings, setSystemSettings] = useState({
+    taxPercentage: 18,
+    serviceFee: 20,
+    platformCommissionPercent: 5,
+    bookingHoldMinutes: 10,
+    noShowGraceMinutes: 15,
+    peakPricingRateMultiplier: 1.25,
   });
 
-  // Station Owner Settlements
-  const [settlements, setSettlements] = useState(() => {
-    const saved = localStorage.getItem("ev_settlements");
-    return saved
-      ? JSON.parse(saved)
-      : [
-          {
-            settlementId: "SET000001",
-            ownerCounterId: "OWNER0001",
-            ownerName: "Kumar Owners",
-            grossRevenue: 82500,
-            platformCommission: 4125,
-            taxesDeducted: 7425,
-            refundsDeducted: 1500,
-            netPayout: 69450,
-            status: "PAID",
-            payoutDate: new Date(Date.now() - 86400000 * 5).toISOString(),
-            isSimulation: true,
-          },
-          {
-            settlementId: "SET000002",
-            ownerCounterId: "OWNER0001",
-            ownerName: "Kumar Owners",
-            grossRevenue: 34200,
-            platformCommission: 1710,
-            taxesDeducted: 3078,
-            refundsDeducted: 0,
-            netPayout: 29412,
-            status: "PENDING",
-            payoutDate: new Date(Date.now() + 86400000 * 2).toISOString(),
-            isSimulation: true,
-          },
-        ];
-  });
+  const [settlements, setSettlements] = useState([]);
+  const [disputes, setDisputes] = useState([]);
+  const [maintenanceTickets, setMaintenanceTickets] = useState([]);
+  const [complaints, setComplaints] = useState([]);
+  const [reviews, setReviews] = useState([]);
 
-  // Payment Disputes
-  const [disputes, setDisputes] = useState(() => {
-    const saved = localStorage.getItem("ev_disputes");
-    return saved
-      ? JSON.parse(saved)
-      : [
-          {
-            disputeId: "DISPUTE000001",
-            paymentId: "PAY000002",
-            bookingId: "BK000002",
-            counterId: "CUS0001",
-            reason: "Double charged during network disconnect",
-            status: "RESOLVED",
-            adminNotes: "Refund of ₹250 issued to Customer Wallet.",
-            createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-          },
-        ];
-  });
+  // Real-time synchronization with MySQL Backend
+  const refreshAllState = async () => {
+    const token = localStorage.getItem("ev_token");
+    if (!token) {
+      setStations([]);
+      setBookings([]);
+      setPayments([]);
+      setOwners([]);
+      setCustomers([]);
+      setAuditLogs([]);
+      setActiveSessions([]);
+      return;
+    }
 
-  // Active Charging Sessions
-  const [activeSessions, setActiveSessions] = useState(() => {
-    const saved = localStorage.getItem("ev_active_sessions");
-    return saved
-      ? JSON.parse(saved)
-      : [
-          {
-            sessionId: "SES000001",
-            bookingId: "BK000001",
-            counterId: "CUS0001",
-            customerName: "Priyan",
-            stationId: "STA001",
-            stationName: "EV Power Hub Chennai Central",
-            chargerId: "CHG0001",
-            connectorType: "CCS2",
-            powerKw: 60,
-            vehicleNumber: "TN58AB1234",
-            startTime: new Date(Date.now() - 1440000).toISOString(),
-            elapsedMinutes: 24,
-            batteryStart: 35,
-            batteryCurrent: 67,
-            batteryTarget: 90,
-            energyConsumedKwh: 18.4,
-            currentPowerKw: 42.7,
-            currentCost: 331,
-            estimatedRemainingMins: 18,
-            status: "CHARGING",
-            isSimulationMode: true,
-          },
-        ];
-  });
+    try {
+      const [stRes, bkRes, pmRes, cpRes, wlRes] = await Promise.allSettled([
+        stationService.getStations(),
+        bookingService.getBookings(),
+        paymentService.getPayments(),
+        complaintService.getComplaints(),
+        walletService.getWallet(),
+      ]);
 
-  // Maintenance Tickets
-  const [maintenanceTickets, setMaintenanceTickets] = useState(() => {
-    const saved = localStorage.getItem("ev_maintenance");
-    return saved
-      ? JSON.parse(saved)
-      : [
-          {
-            ticketId: "MT000001",
-            stationId: "STA005",
-            stationName: "GreenCharge Highway Station OMR",
-            chargerId: "CHG0013",
-            ownerCounterId: "OWNER0001",
-            problem: "Connector Latch Damage & Power Fluctuation",
-            priority: "High",
-            status: "In Progress",
-            assignedTechnician: "Vijay Technician (TECH0001)",
-            createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-          },
-        ];
-  });
-
-  // Complaints
-  const [complaints, setComplaints] = useState(() => {
-    const saved = localStorage.getItem("ev_complaints");
-    return saved
-      ? JSON.parse(saved)
-      : [
-          {
-            complaintId: "CMP000001",
-            counterId: "CUS0001",
-            customerName: "Priyan",
-            category: "Charger Problem",
-            stationId: "STA001",
-            stationName: "EV Power Hub Chennai Central",
-            description: "Charger CHG0003 connector cable had a loose lock.",
-            status: "In Review",
-            createdAt: new Date(Date.now() - 86400000).toISOString(),
-          },
-        ];
-  });
-
-  // Reviews
-  const [reviews, setReviews] = useState(() => {
-    const saved = localStorage.getItem("ev_reviews");
-    return saved
-      ? JSON.parse(saved)
-      : [
-          {
-            reviewId: "REV001",
-            stationId: "STA001",
-            counterId: "CUS0001",
-            customerName: "Priyan",
-            rating: 5,
-            comment: "Excellent high-speed 150 kW CCS2 charging! Clean coffee lounge.",
-            date: new Date(Date.now() - 86400000 * 3).toISOString(),
-          },
-        ];
-  });
-
-  // Persistence Effects
-  useEffect(() => {
-    localStorage.setItem("ev_wallet", JSON.stringify(wallet));
-  }, [wallet]);
-
-  useEffect(() => {
-    localStorage.setItem("ev_loyalty_points", loyaltyPoints.toString());
-  }, [loyaltyPoints]);
-
-  useEffect(() => {
-    localStorage.setItem("ev_system_settings", JSON.stringify(systemSettings));
-  }, [systemSettings]);
-
-  useEffect(() => {
-    localStorage.setItem("ev_settlements", JSON.stringify(settlements));
-  }, [settlements]);
-
-  useEffect(() => {
-    localStorage.setItem("ev_disputes", JSON.stringify(disputes));
-  }, [disputes]);
-
-  useEffect(() => {
-    localStorage.setItem("ev_active_sessions", JSON.stringify(activeSessions));
-  }, [activeSessions]);
-
-  useEffect(() => {
-    localStorage.setItem("ev_maintenance", JSON.stringify(maintenanceTickets));
-  }, [maintenanceTickets]);
-
-  useEffect(() => {
-    localStorage.setItem("ev_complaints", JSON.stringify(complaints));
-  }, [complaints]);
-
-  useEffect(() => {
-    localStorage.setItem("ev_reviews", JSON.stringify(reviews));
-  }, [reviews]);
-
-  /**
-   * Wallet Operations
-   */
-  const topUpWallet = (amount) => {
-    const addAmt = parseFloat(amount);
-    if (isNaN(addAmt) || addAmt <= 0) return;
-    const newTxn = {
-      id: `TXN_W_${Date.now()}`,
-      type: "CREDIT",
-      amount: addAmt,
-      description: "Wallet Top-Up (Razorpay Test Mode)",
-      date: new Date().toISOString(),
-    };
-    setWallet((prev) => ({
-      balance: prev.balance + addAmt,
-      transactions: [newTxn, ...prev.transactions],
-    }));
+      if (stRes.status === "fulfilled" && stRes.value?.success) {
+        setStations(Array.isArray(stRes.value.data) ? stRes.value.data : []);
+      }
+      if (bkRes.status === "fulfilled" && bkRes.value?.success) {
+        setBookings(Array.isArray(bkRes.value.data) ? bkRes.value.data : []);
+      }
+      if (pmRes.status === "fulfilled" && pmRes.value?.success) {
+        setPayments(Array.isArray(pmRes.value.data) ? pmRes.value.data : []);
+      }
+      if (cpRes.status === "fulfilled") {
+        setComplaints(Array.isArray(cpRes.value) ? cpRes.value : (Array.isArray(cpRes.value?.data) ? cpRes.value.data : []));
+      }
+      if (wlRes.status === "fulfilled" && wlRes.value?.success && wlRes.value?.data) {
+        setWallet({
+          balance: parseFloat(wlRes.value.data.balance) || 0,
+          transactions: Array.isArray(wlRes.value.data.transactions) ? wlRes.value.data.transactions : [],
+        });
+      }
+    } catch (err) {
+      console.warn("Could not sync with MySQL backend:", err.message);
+    }
   };
 
-  const deductWallet = (amount, description) => {
+  useEffect(() => {
+    refreshAllState();
+  }, []);
+
+  /**
+   * Wallet Operations (Backed by MySQL database)
+   */
+  const topUpWallet = async (amount) => {
+    const addAmt = parseFloat(amount);
+    if (isNaN(addAmt) || addAmt <= 0) return;
+    try {
+      const res = await walletService.topUpWallet(addAmt);
+      if (res?.success && res.data) {
+        setWallet((prev) => ({
+          balance: res.data.balance,
+          transactions: [res.data.transaction, ...(prev.transactions || [])],
+        }));
+        await refreshAllState();
+        return res;
+      }
+    } catch (err) {
+      console.error("topUpWallet error:", err);
+    }
+  };
+
+  const deductWallet = async (amount, description, bookingId, stationId) => {
     const dedAmt = parseFloat(amount);
     if (wallet.balance < dedAmt) return false;
-    const newTxn = {
-      id: `TXN_W_${Date.now()}`,
-      type: "DEBIT",
-      amount: dedAmt,
-      description: description || "Payment for Booking",
-      date: new Date().toISOString(),
-    };
-    setWallet((prev) => ({
-      balance: prev.balance - dedAmt,
-      transactions: [newTxn, ...prev.transactions],
-    }));
-    return true;
+    try {
+      const res = await walletService.payWithWallet({
+        bookingId,
+        amount: dedAmt,
+        stationId,
+      });
+      if (res?.success) {
+        await refreshAllState();
+        return res;
+      }
+      return false;
+    } catch (err) {
+      console.error("deductWallet error:", err);
+      return false;
+    }
   };
 
   /**
    * Station Operations
    */
-  const addStation = (stationData, ownerCounterId) => {
-    const newStationId = getNextStationId();
-    const newStation = {
-      id: newStationId,
-      ownerCounterId: ownerCounterId || "OWNER0001",
-      name: stationData.name,
-      address: stationData.address,
-      city: stationData.city,
-      state: stationData.state || "Tamil Nadu",
-      pincode: stationData.pincode,
-      latitude: parseFloat(stationData.latitude) || 13.0827,
-      longitude: parseFloat(stationData.longitude) || 80.2707,
-      contactNumber: stationData.contactNumber,
-      openingHours: stationData.openingHours || "24/7 Open",
-      status: "Pending Approval",
-      operationalStatus: "Available",
-      rating: 5.0,
-      image: stationData.image || "https://images.unsplash.com/photo-1593941707882-a5bba14938c7?auto=format&fit=crop&w=600&q=80",
-      amenities: stationData.amenities || ["Free WiFi", "Restroom", "Cafe"],
-      chargers: stationData.chargers || [],
-      peakRate: 22,
-      offPeakRate: 14,
-    };
-
-    saveStation(newStation);
-    setStations(getStations());
-    saveAuditLog({
-      user: ownerCounterId || "OWNER0001",
-      role: "STATION_OWNER",
-      action: "STATION_CREATED",
-      description: `Created new station ${newStationId} (${newStation.name}). Pending Admin Approval.`,
-    });
-    setAuditLogs(getAuditLogs());
-    return newStation;
-  };
-
-  const updateStationStatus = (stationId, status, adminUser = "ADM0001") => {
-    const current = getStations();
-    const updated = current.map((s) => (s.id === stationId ? { ...s, status } : s));
-    localStorage.setItem("ev_stations", JSON.stringify(updated));
-    setStations(updated);
-    saveAuditLog({
-      user: adminUser,
-      role: "ADMIN",
-      action: "STATION_STATUS_CHANGED",
-      description: `Updated status of station ${stationId} to ${status}.`,
-    });
-    setAuditLogs(getAuditLogs());
-  };
-
-  /**
-   * Charger Operations
-   */
-  const addChargerToStation = (stationId, chargerData) => {
-    const newChargerId = getNextChargerId();
-    const newCharger = {
-      id: newChargerId,
-      connector: chargerData.connector || "CCS2",
-      powerKw: parseFloat(chargerData.powerKw) || 60,
-      pricePerKwh: parseFloat(chargerData.pricePerKwh) || 18,
-      status: "Available",
-    };
-
-    const current = getStations();
-    const updated = current.map((s) => {
-      if (s.id === stationId) {
-        return {
-          ...s,
-          chargers: [...(s.chargers || []), newCharger],
-        };
-      }
-      return s;
-    });
-
-    localStorage.setItem("ev_stations", JSON.stringify(updated));
-    setStations(updated);
-    return newCharger;
-  };
-
-  const toggleChargerStatus = (stationId, chargerId, newStatus) => {
-    const current = getStations();
-    const updated = current.map((s) => {
-      if (s.id === stationId) {
-        return {
-          ...s,
-          chargers: (s.chargers || []).map((ch) =>
-            ch.id === chargerId ? { ...ch, status: newStatus } : ch
-          ),
-        };
-      }
-      return s;
-    });
-    localStorage.setItem("ev_stations", JSON.stringify(updated));
-    setStations(updated);
-  };
-
-  /**
-   * Booking Operations (Holds, Payments & Confirmations)
-   */
-  /**
-   * Booking Operations (Holds, Payments & Confirmations)
-   */
-  const createBookingHold = (bookingData) => {
-    const newBookingId = getNextBookingId();
-    const newInvoiceId = getNextInvoiceId();
-    const holdExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-
-    const newBooking = {
-      bookingId: newBookingId,
-      invoiceId: newInvoiceId,
-      counterId: bookingData.counterId || "CUS0001",
-      customerName: bookingData.customerName || "Priyan",
-      stationId: bookingData.stationId,
-      stationName: bookingData.stationName,
-      chargerId: bookingData.chargerId || "CHG0001",
-      connectorType: bookingData.connectorType || "CCS2",
-      vehicleNumber: bookingData.vehicleNumber || "TN58AB1234",
-      vehicleModel: bookingData.vehicleModel || "Tata Nexon EV",
-      date: bookingData.date,
-      time: bookingData.time,
-      duration: bookingData.duration || "45 min",
-      currentBattery: bookingData.currentBattery || 30,
-      targetBattery: bookingData.targetBattery || 85,
-      estimatedKwh: bookingData.estimatedKwh || 18.5,
-      chargingCost: bookingData.chargingCost || 333,
-      serviceFee: bookingData.serviceFee || 20,
-      tax: bookingData.tax || 63,
-      discountAmount: bookingData.discountAmount || 0,
-      totalAmount: bookingData.totalAmount || 416,
-      status: "PAYMENT_PENDING",
-      paymentStatus: "PENDING",
-      paymentMethod: bookingData.paymentMethod || "Razorpay Test Mode",
-      reservationExpiresAt: holdExpiresAt,
-      qrToken: `QR_TOK_${Date.now()}_${newBookingId}`,
-      createdAt: new Date().toISOString(),
-    };
-
-    // Pre-insert into MySQL Backend
-    const backendPayload = {
-      station_id: bookingData.stationId,
-      slot_id: bookingData.slotId || (typeof bookingData.chargerId === "number" ? bookingData.chargerId : 1),
-      vehicleNumber: bookingData.vehicleNumber,
-      vehicleType: bookingData.vehicleType || "Car",
-      chargingType: bookingData.chargingType || "DC Fast Charging",
-      duration: parseFloat(bookingData.duration) || 45,
-      date: bookingData.date,
-      time: bookingData.time,
-      amount: bookingData.totalAmount || 416,
-      paymentMethod: bookingData.paymentMethod || "Razorpay Test Mode",
-    };
-
-    bookingService.createBooking(backendPayload).then((res) => {
-      if (res && res.success && res.data) {
-        newBooking.id = res.data.id;
-        newBooking.bookingId = res.data.bookingId;
-        newBooking.booking_id = res.data.bookingId;
-        setBookings((prev) => [newBooking, ...prev.filter((b) => b.bookingId !== newBooking.bookingId)]);
-        stationService.getStations().then((st) => st.data && setStations(st.data));
-      }
-    }).catch((err) => console.warn("Backend booking hold warning:", err));
-
-    saveBooking(newBooking);
-    setBookings((prev) => [newBooking, ...prev]);
-    return newBooking;
-  };
-
-  const confirmBookingPayment = async (bookingId, razorpayPaymentId, razorpayOrderId, signature) => {
-    const newPaymentId = getNextPaymentId();
-    const currentBookings = getBookings();
-    const targetBooking = currentBookings.find((b) => b.bookingId === bookingId);
-
-    const updatedBookings = currentBookings.map((b) =>
-      b.bookingId === bookingId
-        ? { ...b, status: "CONFIRMED", paymentStatus: "Paid" }
-        : b
-    );
-    localStorage.setItem("ev_bookings", JSON.stringify(updatedBookings));
-    setBookings(updatedBookings);
-
-    // Save Payment Record with Granular State CAPTURED
-    const newPayment = {
-      paymentId: newPaymentId,
-      bookingId,
-      counterId: targetBooking ? targetBooking.counterId : "CUS0001",
-      invoiceId: targetBooking ? targetBooking.invoiceId : getNextInvoiceId(),
-      customerName: targetBooking ? targetBooking.customerName : "Priyan",
-      stationName: targetBooking ? targetBooking.stationName : "EV Power Hub",
-      amount: targetBooking ? targetBooking.totalAmount : 416,
-      platformFee: 20.0,
-      ownerAmount: parseFloat(((targetBooking ? targetBooking.totalAmount : 416) - 20).toFixed(2)),
-      paymentMethod: "Razorpay Standard Checkout",
-      transactionId: razorpayPaymentId || `pay_test_${Date.now()}`,
-      razorpayOrderId: razorpayOrderId || `order_test_${Date.now()}`,
-      razorpayPaymentId: razorpayPaymentId || `pay_test_${Date.now()}`,
-      status: "CAPTURED",
-      date: new Date().toISOString(),
-    };
-    savePayment(newPayment);
-    setPayments((prev) => [newPayment, ...prev]);
-
-    // Persist to MySQL Backend
+  const addStation = async (stationData) => {
     try {
-      await paymentService.verifyPayment({
+      const res = await stationService.createStation(stationData);
+      if (res?.success) {
+        await refreshAllState();
+      }
+      return res?.data;
+    } catch (err) {
+      console.error("addStation error:", err);
+      throw err;
+    }
+  };
+
+  const updateStationStatus = async (stationId, status) => {
+    try {
+      await apiService.updateStationStatus(stationId, status);
+      await refreshAllState();
+    } catch (err) {
+      console.error("updateStationStatus error:", err);
+    }
+  };
+
+  const addChargerToStation = async (stationId, chargerData) => {
+    try {
+      const res = await apiService.addCharger(stationId, chargerData);
+      await refreshAllState();
+      return res?.data;
+    } catch (err) {
+      console.error("addChargerToStation error:", err);
+      throw err;
+    }
+  };
+
+  const toggleChargerStatus = async (stationId, chargerId, newStatus) => {
+    try {
+      await apiService.updateChargerStatus(chargerId, newStatus);
+      await refreshAllState();
+    } catch (err) {
+      console.error("toggleChargerStatus error:", err);
+    }
+  };
+
+  /**
+   * Booking Operations (Pure MySQL Flow)
+   */
+  const createBookingHold = async (bookingData) => {
+    try {
+      const res = await bookingService.createBooking(bookingData);
+      if (res?.success && res.data) {
+        setBookings((prev) => [res.data, ...prev.filter((b) => b.bookingId !== res.data.bookingId)]);
+        return res.data;
+      }
+      throw new Error(res?.message || "Failed to create booking on backend.");
+    } catch (err) {
+      console.error("createBookingHold error:", err);
+      throw err;
+    }
+  };
+
+  const confirmBookingPayment = async (bookingId, razorpayPaymentId, razorpayOrderId, signature, amount) => {
+    try {
+      const res = await paymentService.verifyPayment({
         bookingId,
         razorpayPaymentId,
         razorpayOrderId,
         razorpaySignature: signature,
-        amount: targetBooking ? targetBooking.totalAmount : 416,
+        amount,
       });
-      // Refresh state from live MySQL
-      bookingService.getBookings().then((r) => r.data && setBookings(r.data));
-      paymentService.getPayments().then((r) => r.data && setPayments(r.data));
-      stationService.getStations().then((r) => r.data && setStations(r.data));
-    } catch (apiErr) {
-      console.warn("Backend payment verification notice:", apiErr);
+      await refreshAllState();
+      return res;
+    } catch (err) {
+      console.error("confirmBookingPayment error:", err);
+      throw err;
     }
-
-    // Earn Loyalty Points (10 points per ₹100 spent)
-    const pointsEarned = Math.floor((targetBooking ? targetBooking.totalAmount : 400) / 10);
-    setLoyaltyPoints((prev) => prev + pointsEarned);
-
-    // Save Audit Log
-    saveAuditLog({
-      user: targetBooking ? targetBooking.counterId : "CUS0001",
-      role: "CUSTOMER",
-      action: "PAYMENT_CAPTURED",
-      description: `Razorpay payment verified for ${bookingId}. Amount: ₹${newPayment.amount}. Status: CAPTURED.`,
-    });
-    setAuditLogs(getAuditLogs());
-
-    return newPayment;
   };
 
   const cancelBooking = async (bookingId, reason = "Customer cancelled booking") => {
     try {
-      await bookingService.cancelBooking(bookingId);
-      // Reload live data from backend to ensure slot status shows Available
-      stationService.getStations().then((st) => st.data && setStations(st.data));
-      bookingService.getBookings().then((bk) => bk.data && setBookings(bk.data));
+      const res = await bookingService.cancelBooking(bookingId);
+      await refreshAllState();
+      return res;
     } catch (err) {
-      console.warn("cancelBooking backend notice:", err.message);
+      console.error("cancelBooking error:", err);
+      throw err;
     }
-
-    const res = await apiService.requestRefund({ bookingId, reason });
-    
-    const currentBookings = getBookings();
-    const updated = currentBookings.map((b) =>
-      b.bookingId === bookingId
-        ? { ...b, status: "CANCELLED", paymentStatus: "REFUNDED" }
-        : b
-    );
-    localStorage.setItem("ev_bookings", JSON.stringify(updated));
-    setBookings(updated);
-
-    // Add Refund Log
-    const refundId = res?.refundId || `RFD${Date.now().toString().slice(-6)}`;
-    saveAuditLog({
-      user: "CUS0001",
-      role: "CUSTOMER",
-      action: "BOOKING_CANCELLED_REFUNDED",
-      description: `Booking ${bookingId} cancelled. Refund ${refundId} issued. Reason: ${reason}`,
-    });
-    setAuditLogs(getAuditLogs());
-    return res;
   };
 
-  const checkInBooking = (bookingId) => {
-    const current = getBookings();
-    const updated = current.map((b) =>
-      b.bookingId === bookingId
-        ? { ...b, status: "CHECKED_IN", checkedInAt: new Date().toISOString() }
-        : b
-    );
-    localStorage.setItem("ev_bookings", JSON.stringify(updated));
-    setBookings(updated);
-
-    saveAuditLog({
-      user: "CUS0001",
-      role: "CUSTOMER",
-      action: "QR_CHECK_IN_SUCCESS",
-      description: `Checked in successfully at station for booking ${bookingId}.`,
-    });
-    setAuditLogs(getAuditLogs());
+  const checkInBooking = async (bookingId) => {
+    try {
+      const res = await bookingService.updateBookingStatus(bookingId, "CHECKED_IN");
+      await refreshAllState();
+      return res;
+    } catch (err) {
+      console.error("checkInBooking error:", err);
+      throw err;
+    }
   };
 
-  /**
-   * Station Owner Approval
-   */
-  const updateOwnerStatus = (ownerCounterId, status) => {
-    const current = getStationOwners();
-    const updated = current.map((o) => (o.counterId === ownerCounterId ? { ...o, status } : o));
-    localStorage.setItem("ev_station_owners", JSON.stringify(updated));
-    setOwners(updated);
-    saveAuditLog({
-      user: "ADM0001",
-      role: "ADMIN",
-      action: "OWNER_STATUS_CHANGED",
-      description: `Updated status of Station Owner ${ownerCounterId} to ${status}.`,
-    });
-    setAuditLogs(getAuditLogs());
+  const updateOwnerStatus = async (ownerId, status) => {
+    try {
+      await apiService.updateOwnerStatus(ownerId, status);
+      await refreshAllState();
+    } catch (err) {
+      console.error("updateOwnerStatus error:", err);
+    }
   };
 
-  /**
-   * Maintenance Operations
-   */
-  const addMaintenanceTicket = (ticketData) => {
+  const addMaintenanceTicket = async (ticketData) => {
     const newTicketId = `MT${Date.now().toString().slice(-6)}`;
     const newTicket = {
       ticketId: newTicketId,
       createdAt: new Date().toISOString(),
       status: "Open",
-      assignedTechnician: "Vijay Technician (TECH0001)",
+      assignedTechnician: "Field Technician",
       ...ticketData,
     };
     setMaintenanceTickets((prev) => [newTicket, ...prev]);
     return newTicket;
   };
 
-  /**
-   * Complaint Operations
-   */
-  const addComplaint = (complaintData) => {
-    const newId = `CMP${Date.now().toString().slice(-6)}`;
-    const newComplaint = {
-      complaintId: newId,
-      createdAt: new Date().toISOString(),
-      status: "Open",
-      ...complaintData,
-    };
-    setComplaints((prev) => [newComplaint, ...prev]);
-    return newComplaint;
+  const addComplaint = async (complaintData) => {
+    try {
+      const res = await complaintService.createComplaint({
+        subject: complaintData.category || complaintData.subject || "Station Issue",
+        category: complaintData.category || "General",
+        description: complaintData.description || complaintData.message || "",
+        stationId: complaintData.stationId || null,
+        bookingId: complaintData.bookingId || null,
+        priority: complaintData.priority || "MEDIUM",
+      });
+      await refreshAllState();
+      return res?.data || res;
+    } catch (err) {
+      console.error("addComplaint error:", err);
+      throw err;
+    }
   };
 
-  /**
-   * Review Operations
-   */
-  const addReview = (reviewData) => {
+  const updateFeedbackStatus = async (complaintId, status) => {
+    try {
+      await complaintService.updateComplaint(complaintId, {
+        status: status === "Resolved" ? "RESOLVED" : status,
+        resolution: "Updated by Admin/Staff",
+      });
+      await refreshAllState();
+    } catch (err) {
+      console.error("updateFeedbackStatus error:", err);
+    }
+  };
+
+  const addReview = async (reviewData) => {
     const newReview = {
       reviewId: `REV${Date.now()}`,
       date: new Date().toISOString(),
@@ -687,6 +320,7 @@ export function SystemStateProvider({ children }) {
         maintenanceTickets,
         complaints,
         reviews,
+        refreshAllState,
         topUpWallet,
         deductWallet,
         addStation,
@@ -700,6 +334,7 @@ export function SystemStateProvider({ children }) {
         updateOwnerStatus,
         addMaintenanceTicket,
         addComplaint,
+        updateFeedbackStatus,
         addReview,
         setActiveSessions,
         setSystemSettings,

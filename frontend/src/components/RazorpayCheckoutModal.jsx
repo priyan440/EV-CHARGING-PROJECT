@@ -11,9 +11,18 @@ import {
   Lock,
 } from "lucide-react";
 import { apiService } from "../services/apiService";
+import { walletService } from "../services/walletService";
 import { useSystemState } from "../contexts/SystemStateContext";
 
-export default function RazorpayCheckoutModal({ booking, onClose, onSuccess }) {
+export default function RazorpayCheckoutModal({
+  booking: rawBooking,
+  bookingData,
+  isOpen = true,
+  onClose,
+  onSuccess,
+  onPaymentSuccess,
+}) {
+  const booking = rawBooking || bookingData;
   const { confirmBookingPayment, wallet, deductWallet } = useSystemState();
   const [loading, setLoading] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState("IDLE"); // IDLE, PROCESSING, SUCCESS, FAILED
@@ -25,6 +34,7 @@ export default function RazorpayCheckoutModal({ booking, onClose, onSuccess }) {
 
   // Dynamically load Razorpay Standard Checkout JS SDK
   useEffect(() => {
+    if (!isOpen || !booking) return;
     const script = document.createElement("script");
     script.src = "https://checkout.razorpay.com/v1/checkout.js";
     script.async = true;
@@ -34,7 +44,9 @@ export default function RazorpayCheckoutModal({ booking, onClose, onSuccess }) {
         document.body.removeChild(script);
       }
     };
-  }, []);
+  }, [isOpen, booking]);
+
+  if (!isOpen || !booking) return null;
 
   const handleLaunchRazorpayCheckout = async () => {
     setLoading(true);
@@ -112,6 +124,7 @@ export default function RazorpayCheckoutModal({ booking, onClose, onSuccess }) {
             setPaymentResult(resultObj);
             setPaymentStatus("SUCCESS");
             if (onSuccess) onSuccess(resultObj);
+            if (onPaymentSuccess) onPaymentSuccess(resultObj);
           } else {
             setPaymentStatus("FAILED");
             setErrorMsg(verifyRes?.message || "Server HMAC signature verification failed.");
@@ -182,38 +195,54 @@ export default function RazorpayCheckoutModal({ booking, onClose, onSuccess }) {
     }
   };
 
-  const handleWalletPayment = () => {
-    if (wallet.balance < booking.totalAmount) {
-      setErrorMsg(`Insufficient wallet balance (₹${wallet.balance}). Top up wallet or select Razorpay.`);
+  const handleWalletPayment = async () => {
+    if ((wallet.balance || 0) < (booking.totalAmount || 0)) {
+      setErrorMsg(`Insufficient wallet balance (₹${wallet.balance || 0}). Top up wallet or select Razorpay.`);
       return;
     }
 
     setLoading(true);
     setPaymentStatus("PROCESSING");
+    setErrorMsg("");
 
-    setTimeout(() => {
-      const success = deductWallet(booking.totalAmount, `Payment for EV Booking ${booking.bookingId}`);
-      if (success) {
-        const payId = `PAY_W_${Date.now().toString().slice(-6)}`;
-        confirmBookingPayment(booking.bookingId, payId, `order_wallet_${Date.now()}`, "wallet_auth");
-        setPaymentResult({
+    try {
+      const res = await walletService.payWithWallet({
+        bookingId: booking.bookingId,
+        amount: booking.totalAmount,
+        stationId: booking.stationId,
+      });
+
+      if (res && res.success) {
+        const payId = res.data?.paymentId || `PAY_W_${Date.now().toString().slice(-6)}`;
+        const resultObj = {
           paymentId: payId,
-          razorpayPaymentId: "WALLET_PAYMENT",
-          razorpayOrderId: "WALLET_ORDER",
+          payment_id: payId,
+          razorpayPaymentId: payId,
+          razorpayOrderId: `WALLET_ORD_${Date.now()}`,
           bookingId: booking.bookingId,
           amount: booking.totalAmount,
+          paymentMethod: "WALLET",
+          method: "WALLET",
           invoiceId: booking.invoiceId || `INV${Date.now().toString().slice(-6)}`,
           status: "CAPTURED",
           date: new Date().toLocaleDateString(),
-        });
+        };
+
+        setPaymentResult(resultObj);
         setPaymentStatus("SUCCESS");
-        if (onSuccess) onSuccess();
+        await confirmBookingPayment(booking.bookingId, payId, resultObj.razorpayOrderId, "wallet_auth", booking.totalAmount);
+        if (onSuccess) onSuccess(resultObj);
+        if (onPaymentSuccess) onPaymentSuccess(resultObj);
       } else {
         setPaymentStatus("FAILED");
-        setErrorMsg("Wallet deduction failed.");
+        setErrorMsg(res?.message || "Wallet deduction failed on server.");
       }
+    } catch (err) {
+      setPaymentStatus("FAILED");
+      setErrorMsg(err.message || "Failed to process wallet payment.");
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   return (

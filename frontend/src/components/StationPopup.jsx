@@ -145,7 +145,7 @@ export default function StationPopup({
             className="flex-1 px-2.5 py-1.5 rounded-xl bg-[var(--bg-surface-raised)] hover:bg-[var(--border-subtle)] text-[var(--text-primary)] font-bold text-[11px] border border-[var(--border-subtle)] transition flex items-center justify-center gap-1 cursor-pointer"
           >
             <Info size={12} />
-            <span>Details</span>
+            <span>VIEW STATION</span>
           </button>
         )}
 

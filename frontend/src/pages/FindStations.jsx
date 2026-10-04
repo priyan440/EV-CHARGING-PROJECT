@@ -442,20 +442,20 @@ export default function FindStations() {
                         )}
                       </div>
 
-                      {/* Action Buttons */}
+                      {/* Action Buttons (Section 15: View Station & Book Slot) */}
                       <div className="flex items-center gap-2 pt-3 border-t border-[var(--border-subtle)]">
                         <button
-                          onClick={() => navigate(`/customer/stations/${st.id || st.stationId}`)}
+                          onClick={() => navigate(`/stations/${st.id || st.stationId}`)}
                           className="flex-1 py-2 rounded-xl bg-[var(--bg-surface-raised)] hover:bg-[var(--border-subtle)] text-[var(--text-primary)] font-bold text-xs border border-[var(--border-subtle)] transition cursor-pointer"
                         >
-                          View Details
+                          View Station
                         </button>
                         <button
-                          onClick={() => navigate(`/customer/book?stationId=${st.id || st.stationId}`)}
-                          className="flex-1 py-2 rounded-xl bg-[var(--accent-primary)] hover:opacity-95 text-white font-bold text-xs shadow-md shadow-blue-500/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                          onClick={() => navigate(`/book-slot?stationId=${st.id || st.stationId}`)}
+                          className="flex-1 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-md shadow-emerald-500/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
                         >
-                          <Zap size={14} className="fill-white" />
-                          <span>Book Bay</span>
+                          <Zap size={14} className="fill-slate-950" />
+                          <span>Book Slot</span>
                         </button>
                       </div>
                     </div>

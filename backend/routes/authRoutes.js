@@ -7,8 +7,10 @@ import {
   sendOTP,
   verifyOTP,
   resendOTP,
+  googleAuth,
   logout,
   getProfile,
+  updateProfile,
   getCounters,
 } from "../controllers/authController.js";
 import { authenticate } from "../middleware/authMiddleware.js";
@@ -20,6 +22,7 @@ router.post("/register", register);
 router.post("/register-customer", registerCustomer);
 router.post("/register-owner", registerOwner);
 router.post("/login", login);
+router.post("/google", googleAuth);
 
 // Email OTP Authentication Endpoints
 router.post("/send-otp", sendOTP);
@@ -31,5 +34,6 @@ router.get("/counters", getCounters);
 
 // Protected Auth Endpoints
 router.get("/me", authenticate, getProfile);
+router.put("/profile", authenticate, updateProfile);
 
 export default router;

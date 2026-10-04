@@ -14,8 +14,12 @@ import {
   getPriceQuote,
   getPricingRules,
   updatePricingRules,
+  getStationConnectors,
+  addStationConnector,
+  updateConnector,
+  deleteConnector,
 } from "../controllers/stationController.js";
-import { authenticate } from "../middleware/authMiddleware.js";
+import { authenticate, optionalAuth } from "../middleware/authMiddleware.js";
 import { authorizeRoles } from "../middleware/roleMiddleware.js";
 
 const router = express.Router();
@@ -26,11 +30,34 @@ router.get("/map", getStationsMap);
 router.get("/external", getExternalStations);
 router.get("/ev-stations", getExternalStations);
 
+// Connectors for a specific station (Public / Authenticated)
+router.get("/:stationId/connectors", optionalAuth, getStationConnectors);
+router.post(
+  "/:stationId/connectors",
+  authenticate,
+  authorizeRoles("STATION_OWNER", "OWNER", "ADMIN"),
+  addStationConnector
+);
+
+// Direct Connector Management
+router.put(
+  "/connectors/:id",
+  authenticate,
+  authorizeRoles("STATION_OWNER", "OWNER", "ADMIN"),
+  updateConnector
+);
+router.delete(
+  "/connectors/:id",
+  authenticate,
+  authorizeRoles("STATION_OWNER", "OWNER", "ADMIN"),
+  deleteConnector
+);
+
 // Owner Stations Route
 router.get(
   "/owner/my-stations",
   authenticate,
-  authorizeRoles("STATION_OWNER", "ADMIN"),
+  authorizeRoles("STATION_OWNER", "OWNER", "ADMIN"),
   getMyStations
 );
 
@@ -42,7 +69,7 @@ router.get("/:id/power-status", getStationPowerStatus);
 router.put(
   "/:id/power",
   authenticate,
-  authorizeRoles("STATION_OWNER", "ADMIN"),
+  authorizeRoles("STATION_OWNER", "OWNER", "ADMIN"),
   updateStationPower
 );
 
@@ -54,7 +81,7 @@ router.get("/:id/pricing-rules", getPricingRules);
 router.put(
   "/:id/pricing-rules",
   authenticate,
-  authorizeRoles("STATION_OWNER", "ADMIN"),
+  authorizeRoles("STATION_OWNER", "OWNER", "ADMIN"),
   updatePricingRules
 );
 
@@ -65,21 +92,21 @@ router.get("/:id", getStationById);
 router.post(
   "/",
   authenticate,
-  authorizeRoles("STATION_OWNER", "ADMIN"),
+  authorizeRoles("STATION_OWNER", "OWNER", "ADMIN"),
   createStation
 );
 
 router.put(
   "/:id",
   authenticate,
-  authorizeRoles("STATION_OWNER", "ADMIN"),
+  authorizeRoles("STATION_OWNER", "OWNER", "ADMIN"),
   updateStation
 );
 
 router.delete(
   "/:id",
   authenticate,
-  authorizeRoles("STATION_OWNER", "ADMIN"),
+  authorizeRoles("STATION_OWNER", "OWNER", "ADMIN"),
   deleteStation
 );
 

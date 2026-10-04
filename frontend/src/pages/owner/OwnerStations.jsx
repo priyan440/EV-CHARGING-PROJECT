@@ -1,717 +1,476 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import {
   Building2,
   Plus,
   MapPin,
   Clock,
-  CheckCircle2,
-  AlertCircle,
-  Sliders,
   Zap,
-  TrendingUp,
-  Percent,
-  RotateCcw,
-  Check,
-  X,
+  Power,
+  Globe,
+  Edit2,
   RefreshCw,
-  Sparkles,
-  Layers,
   Search,
+  CheckCircle2,
+  Sliders,
+  Sparkles,
+  X,
+  Layers,
 } from "lucide-react";
-import { useAuth } from "../../contexts/AuthContext";
-import { stationService } from "../../services/stationService";
-import LocationPickerMap from "../../components/LocationPickerMap";
+import {
+  getOwnerStations,
+  createOwnerStation,
+  updateOwnerStation,
+  deleteOwnerStation,
+} from "../../services/ownerService";
 
 export default function OwnerStations() {
-  const { currentUser } = useAuth();
-
-  const [myStations, setMyStations] = useState([]);
+  const [stations, setStations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingStation, setEditingStation] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [statusMsg, setStatusMsg] = useState({ type: "", text: "" });
+  const [toastMsg, setToastMsg] = useState("");
 
-  // Form State for New Station
-  const [stationName, setStationName] = useState("");
-  const [networkName, setNetworkName] = useState("GreenCharge Network");
-  const [description, setDescription] = useState("");
-  const [address, setAddress] = useState("");
-  const [city, setCity] = useState("Chennai");
-  const [state, setState] = useState("Tamil Nadu");
-  const [pincode, setPincode] = useState("600028");
-  const [latitude, setLatitude] = useState(13.0827);
-  const [longitude, setLongitude] = useState(80.2707);
-  const [is24x7, setIs24x7] = useState(true);
-  const [openingTime, setOpeningTime] = useState("06:00");
-  const [closingTime, setClosingTime] = useState("23:00");
-  const [contactNumber, setContactNumber] = useState("+91 98401 23456");
-  const [email, setEmail] = useState("");
-  const [parkingCapacity, setParkingCapacity] = useState(10);
-  const [baysCount, setBaysCount] = useState(4);
-  const [acChargers, setAcChargers] = useState(2);
-  const [dcChargers, setDcChargers] = useState(2);
-  const [connectorTypes, setConnectorTypes] = useState("CCS2, Type 2");
-  const [chargingPrice, setChargingPrice] = useState(18.0);
-  const [serviceFee, setServiceFee] = useState(20.0);
-  const [amenities, setAmenities] = useState(["WiFi", "Parking", "Restrooms", "CCTV"]);
-  const [image, setImage] = useState(
-    "https://images.unsplash.com/photo-1593941707882-a5bba14938c7?auto=format&fit=crop&w=600&q=80"
-  );
-
-  // Dynamic Pricing Modal State
-  const [showPricingModal, setShowPricingModal] = useState(false);
-  const [selectedStationPricing, setSelectedStationPricing] = useState(null);
-  const [pricingLoading, setPricingLoading] = useState(false);
-  const [pricingSaving, setPricingSaving] = useState(false);
-  const [pricingSuccessMsg, setPricingSuccessMsg] = useState("");
-  const [pricingErrorMsg, setPricingErrorMsg] = useState("");
-  const [pricingRules, setPricingRules] = useState({
-    peak_start: "18:00",
-    peak_end: "21:00",
-    peak_multiplier: 1.25,
-    offpeak_discount: 0.15,
-    utilization_threshold: 0.75,
-    max_multiplier: 1.5,
+  const [formData, setFormData] = useState({
+    stationName: "",
+    address: "",
+    city: "Chennai",
+    state: "Tamil Nadu",
+    pincode: "600026",
+    latitude: 13.0504,
+    longitude: 80.2096,
+    contactNumber: "+91 9876543210",
+    openingTime: "06:00 AM",
+    closingTime: "11:00 PM",
+    stationType: "Public",
+    parkingCapacity: 8,
+    maxPowerKw: 150,
+    description: "High-speed multi-standard EV charging hub.",
+    amenities: ["WiFi", "Restrooms", "Cafe"],
   });
 
-  const loadOwnerStations = async () => {
+  const showToast = (msg) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(""), 3500);
+  };
+
+  const loadData = async () => {
     setLoading(true);
     try {
-      const res = await stationService.getMyStations();
-      if (res?.success && Array.isArray(res.data)) {
-        setMyStations(res.data);
-      }
+      const data = await getOwnerStations();
+      setStations(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.warn("Failed to load owner stations:", err);
+      console.error(err);
+      showToast("Error loading stations from MySQL");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadOwnerStations();
+    loadData();
   }, []);
 
-  const handleLocationChange = (newLat, newLng, addressHint) => {
-    setLatitude(newLat);
-    setLongitude(newLng);
-    if (addressHint) {
-      setAddress(addressHint.slice(0, 120));
-    }
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]:
+        name === "latitude" || name === "longitude" || name === "maxPowerKw" || name === "parkingCapacity"
+          ? Number(value)
+          : value,
+    }));
   };
 
-  const handleRegisterStation = async (e) => {
+  const handleCreateOrUpdate = async (e) => {
     e.preventDefault();
-    if (!stationName.trim()) {
-      setStatusMsg({ type: "error", text: "Station Name is required." });
-      return;
-    }
-
     setSubmitting(true);
-    setStatusMsg({ type: "", text: "" });
-
     try {
-      const payload = {
-        stationName: stationName.trim(),
-        name: stationName.trim(),
-        networkName: networkName.trim(),
-        description: description.trim(),
-        address: address.trim() || `${stationName}, ${city}`,
-        city: city.trim(),
-        state: state.trim(),
-        pincode: pincode.trim(),
-        latitude,
-        longitude,
-        is24x7,
-        openingTime: is24x7 ? "00:00:00" : `${openingTime}:00`,
-        closingTime: is24x7 ? "23:59:59" : `${closingTime}:00`,
-        contactNumber,
-        email: email || currentUser?.email,
-        parkingCapacity: parseInt(parkingCapacity, 10),
-        baysCount: parseInt(baysCount, 10),
-        acChargers: parseInt(acChargers, 10),
-        dcChargers: parseInt(dcChargers, 10),
-        connectorTypes,
-        chargingPrice: parseFloat(chargingPrice),
-        serviceFee: parseFloat(serviceFee),
-        amenities,
-        image,
-      };
-
-      const res = await stationService.createStation(payload);
-      setSubmitting(false);
-
-      if (res?.success) {
-        setStatusMsg({
-          type: "success",
-          text: res.message || "Charging Station registered successfully! Submitted for Admin approval.",
-        });
-        setTimeout(() => {
-          setShowAddModal(false);
-          setStatusMsg({ type: "", text: "" });
-          loadOwnerStations();
-        }, 1500);
+      if (editingStation) {
+        await updateOwnerStation(editingStation.stationId || editingStation.id, formData);
+        showToast(`Station ${editingStation.stationId || editingStation.id} updated!`);
       } else {
-        setStatusMsg({ type: "error", text: res?.message || "Failed to register station." });
+        const res = await createOwnerStation(formData);
+        showToast(`Station commissioned! ID: ${res.data?.stationId || res.data?.id || "STN"}`);
       }
+      setShowAddModal(false);
+      setEditingStation(null);
+      loadData();
     } catch (err) {
-      setSubmitting(false);
-      setStatusMsg({ type: "error", text: "Error submitting station to server." });
-    }
-  };
-
-  const handleOpenPricingModal = async (station) => {
-    setSelectedStationPricing(station);
-    setShowPricingModal(true);
-    setPricingLoading(true);
-    setPricingSuccessMsg("");
-    setPricingErrorMsg("");
-
-    try {
-      const res = await stationService.getPricingRules(station.id);
-      if (res && res.success && res.data) {
-        const r = res.data;
-        setPricingRules({
-          peak_start: r.peak_start ? r.peak_start.slice(0, 5) : "18:00",
-          peak_end: r.peak_end ? r.peak_end.slice(0, 5) : "21:00",
-          peak_multiplier: parseFloat(r.peak_multiplier) || 1.25,
-          offpeak_discount: parseFloat(r.offpeak_discount) || 0.15,
-          utilization_threshold: parseFloat(r.utilization_threshold) || 0.75,
-          max_multiplier: parseFloat(r.max_multiplier) || 1.5,
-        });
-      }
-    } catch (err) {
-      console.warn("Pricing rules fetch warning:", err);
+      showToast("Error saving station: " + (err.message || "Failed"));
     } finally {
-      setPricingLoading(false);
+      setSubmitting(false);
     }
   };
 
-  const handleSavePricing = async (e) => {
-    e.preventDefault();
-    if (!selectedStationPricing) return;
-    setPricingSaving(true);
-    setPricingSuccessMsg("");
-    setPricingErrorMsg("");
-
-    const payload = {
-      peak_start: `${pricingRules.peak_start}:00`,
-      peak_end: `${pricingRules.peak_end}:00`,
-      peak_multiplier: parseFloat(pricingRules.peak_multiplier),
-      offpeak_discount: parseFloat(pricingRules.offpeak_discount),
-      utilization_threshold: parseFloat(pricingRules.utilization_threshold),
-      max_multiplier: parseFloat(pricingRules.max_multiplier),
-    };
-
-    const res = await stationService.updatePricingRules(selectedStationPricing.id, payload);
-    setPricingSaving(false);
-    if (res && res.success) {
-      setPricingSuccessMsg("Dynamic pricing rules saved successfully!");
-      setTimeout(() => {
-        setShowPricingModal(false);
-        setPricingSuccessMsg("");
-      }, 1200);
-    } else {
-      setPricingErrorMsg(res?.message || "Failed to update pricing rules.");
+  const handleDeactivate = async (stationId) => {
+    if (!window.confirm(`Are you sure you want to deactivate station ${stationId}?`)) return;
+    try {
+      await deleteOwnerStation(stationId);
+      showToast(`Station ${stationId} deactivated.`);
+      loadData();
+    } catch (err) {
+      showToast("Error: " + err.message);
     }
   };
+
+  const openEditModal = (st) => {
+    setEditingStation(st);
+    setFormData({
+      stationName: st.stationName || st.name || "",
+      address: st.address || "",
+      city: st.city || "Chennai",
+      state: st.state || "Tamil Nadu",
+      pincode: st.pincode || "600026",
+      latitude: st.latitude || 13.0504,
+      longitude: st.longitude || 80.2096,
+      contactNumber: st.contactNumber || "+91 9876543210",
+      openingTime: st.openingTime || "06:00 AM",
+      closingTime: st.closingTime || "11:00 PM",
+      stationType: st.stationType || "Public",
+      parkingCapacity: st.parkingCapacity || st.totalSlots || 8,
+      maxPowerKw: st.maxPowerKw || st.maxPower || 150,
+      description: st.description || "",
+      amenities: st.amenities || ["WiFi", "Restrooms"],
+    });
+    setShowAddModal(true);
+  };
+
+  const filteredStations = stations.filter(
+    (st) =>
+      st.stationName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      st.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      st.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      st.stationId?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto font-sans pb-12">
-      {/* Header Banner */}
-      <div className="theme-card p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in font-sans text-[var(--text-primary)]">
+      {/* Toast Alert */}
+      {toastMsg && (
+        <div className="fixed top-6 right-6 z-50 bg-[var(--accent-primary)] text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-blue-400/30 animate-fade-in font-bold text-xs">
+          <Sparkles className="w-4 h-4 text-yellow-300" />
+          <span>{toastMsg}</span>
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="p-6 md:p-8 rounded-3xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-3 py-1 rounded-full bg-blue-500/10 text-[var(--accent-primary)] text-xs font-mono font-bold border border-blue-500/20">
-              STATION OWNER HUB
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+              STATION INFRASTRUCTURE
             </span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-[var(--text-primary)] flex items-center gap-2.5">
-            <Building2 size={28} className="text-[var(--accent-primary)]" /> My EV Charging Stations
+          <h1 className="text-2xl md:text-3xl font-black text-[var(--text-primary)] flex items-center gap-3 font-mono">
+            <Building2 className="w-7 h-7 text-[var(--accent-primary)]" />
+            Station Management
           </h1>
           <p className="text-xs text-[var(--text-muted)] mt-1">
-            Register new charging stations, pinpoint GPS locations, manage bay power limits, and configure surge pricing.
+            Manage EV charging hubs, GPS coordinates, power capacity limits, and operating hours in MySQL.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={loadOwnerStations}
-            disabled={loading}
-            className="p-2.5 rounded-2xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition cursor-pointer"
-            title="Refresh Stations"
+          <Link
+            to="/owner/map"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--bg-surface-raised)] hover:bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-subtle)] text-xs font-bold transition"
           >
-            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-          </button>
-
+            <Globe className="w-4 h-4 text-sky-500" />
+            Station Map
+          </Link>
           <button
-            onClick={() => setShowAddModal(true)}
-            className="px-5 py-2.5 rounded-2xl bg-[var(--accent-primary)] hover:opacity-95 text-white font-extrabold text-xs tracking-wider transition shadow-md shadow-blue-500/20 flex items-center gap-2 cursor-pointer"
+            onClick={() => {
+              setEditingStation(null);
+              setFormData({
+                stationName: "",
+                address: "",
+                city: "Chennai",
+                state: "Tamil Nadu",
+                pincode: "600026",
+                latitude: 13.0504,
+                longitude: 80.2096,
+                contactNumber: "+91 9876543210",
+                openingTime: "06:00 AM",
+                closingTime: "11:00 PM",
+                stationType: "Public",
+                parkingCapacity: 8,
+                maxPowerKw: 150,
+                description: "High-speed multi-standard EV charging hub.",
+                amenities: ["WiFi", "Restrooms", "Cafe"],
+              });
+              setShowAddModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--accent-primary)] hover:opacity-90 text-white font-bold text-xs transition shadow-lg shadow-blue-500/20 active:scale-95 cursor-pointer"
           >
-            <Plus size={16} /> Register New Station
+            <Plus className="w-4 h-4" />
+            Add New Station
           </button>
         </div>
       </div>
 
-      {/* Stations List */}
-      {loading ? (
-        <div className="space-y-4">
-          {[1, 2].map((i) => (
-            <div key={i} className="theme-card p-6 animate-pulse space-y-3">
-              <div className="h-6 bg-[var(--border-subtle)] rounded w-1/4"></div>
-              <div className="h-4 bg-[var(--border-subtle)] rounded w-1/2"></div>
-            </div>
-          ))}
+      {/* Search & Filter Bar */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="relative flex-1 max-w-md">
+          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+          <input
+            type="text"
+            placeholder="Search by name, city, or ID (e.g. STN0001)..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl pl-9 pr-4 py-2.5 text-xs text-[var(--text-primary)] focus:outline-none"
+          />
         </div>
-      ) : myStations.length === 0 ? (
-        <div className="theme-card p-12 text-center space-y-4">
-          <div className="w-16 h-16 rounded-3xl bg-blue-500/10 text-[var(--accent-primary)] flex items-center justify-center mx-auto">
-            <Building2 size={32} />
-          </div>
-          <h3 className="font-bold text-lg text-[var(--text-primary)]">No Registered Stations Yet</h3>
-          <p className="text-xs text-[var(--text-muted)] max-w-md mx-auto">
-            Register your first EV charging station to list it across the Live EV Map and start receiving bookings.
-          </p>
+
+        <button
+          onClick={loadData}
+          disabled={loading}
+          className="p-2.5 bg-[var(--bg-surface-raised)] hover:bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-primary)] rounded-xl border border-[var(--border-subtle)] transition cursor-pointer"
+          title="Refresh Stations"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-[var(--accent-primary)]" : ""}`} />
+        </button>
+      </div>
+
+      {/* Stations Grid */}
+      {loading ? (
+        <div className="text-center py-16 bg-[var(--bg-surface)] rounded-3xl border border-[var(--border-subtle)]">
+          <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+          <p className="text-[var(--text-muted)] text-xs font-mono animate-pulse">Loading stations from MySQL...</p>
+        </div>
+      ) : filteredStations.length === 0 ? (
+        <div className="text-center py-16 bg-[var(--bg-surface)] rounded-3xl border border-[var(--border-subtle)] shadow-sm space-y-3">
+          <Building2 className="w-12 h-12 text-[var(--text-muted)] mx-auto" />
+          <h3 className="text-base font-bold text-[var(--text-primary)] font-mono">No Stations Commissioned</h3>
+          <p className="text-xs text-[var(--text-muted)]">Click below to commission your first EV station in MySQL.</p>
           <button
             onClick={() => setShowAddModal(true)}
-            className="px-5 py-2.5 rounded-2xl bg-[var(--accent-primary)] text-white font-bold text-xs shadow-md cursor-pointer"
+            className="px-4 py-2 bg-[var(--accent-primary)] text-white rounded-xl text-xs font-bold cursor-pointer shadow-md"
           >
-            Register Charging Station
+            + Add Station
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {myStations.map((st) => {
-            const availableBays = parseInt(st.availableSlots ?? st.availableBays ?? st.availableConnectors ?? 4, 10);
-            const totalBays = parseInt(st.totalSlots ?? st.totalBays ?? 4, 10);
-            const rawApproval = (st.approvalStatus || st.approval_status || "").toUpperCase();
-            const rawStatus = (st.status || st.rawStatus || st.operationalStatus || "ACTIVE").toUpperCase();
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filteredStations.map((st) => (
+            <div
+              key={st.stationId || st.id || st._id}
+              className="bg-[var(--bg-surface)] rounded-3xl p-5 border border-[var(--border-subtle)] hover:border-blue-500/40 transition-all flex flex-col justify-between shadow-sm space-y-4"
+            >
+              <div>
+                {/* Top Badges */}
+                <div className="flex items-center justify-between mb-3 text-xs">
+                  <span className="font-mono font-bold text-[var(--accent-primary)] px-2.5 py-0.5 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                    {st.stationId || st.station_id || `STN000${st.id}`}
+                  </span>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full font-bold uppercase text-[10px] ${
+                      st.status === "Active" || st.status === "ACTIVE" || st.status === "Approved" || st.status === "APPROVED"
+                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                        : st.status === "Maintenance"
+                        ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                        : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
+                    }`}
+                  >
+                    {st.status || "ACTIVE"}
+                  </span>
+                </div>
 
-            const isPending = rawApproval === "PENDING" || rawStatus === "PENDING";
-            const isSuspended = rawApproval === "SUSPENDED" || rawStatus === "SUSPENDED" || rawStatus === "MAINTENANCE";
-            const isRejected = rawApproval === "REJECTED" || rawStatus === "REJECTED";
-            const isApproved = !isPending && !isSuspended && !isRejected;
+                <h3 className="text-base font-bold text-[var(--text-primary)] mb-1">
+                  {st.stationName || st.station_name || st.name}
+                </h3>
+                <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] mb-3">
+                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="line-clamp-1">{st.address}, {st.city}</span>
+                </div>
 
-            const badgeText = isPending ? "Pending Approval" : isRejected ? "Rejected" : isSuspended ? "Suspended" : "Approved";
-            const badgeClass = isApproved
-              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
-              : isPending
-              ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
-              : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20";
-
-            return (
-              <div key={st.id || st.stationId} className="theme-card p-6 space-y-4 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="text-xs font-mono font-bold text-[var(--accent-primary)]">
-                      {st.networkName || "EV Network"}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase border ${badgeClass}`}>
-                        {badgeText}
-                      </span>
-                    </div>
+                {/* Metrics Pill Grid */}
+                <div className="grid grid-cols-3 gap-2 bg-[var(--bg-surface-raised)] p-3 rounded-2xl mb-4 text-center text-xs border border-[var(--border-subtle)]">
+                  <div>
+                    <div className="text-[10px] text-[var(--text-muted)] uppercase font-bold">Chargers</div>
+                    <div className="font-bold text-[var(--text-primary)] font-mono text-sm">{st.totalChargers || st.total_slots || 4}</div>
                   </div>
-
-                  <h3 className="font-extrabold text-base text-[var(--text-primary)]">{st.stationName || st.name}</h3>
-                  <p className="text-xs text-[var(--text-muted)] line-clamp-1 mt-0.5">
-                    📍 {st.address || `${st.city}, Tamil Nadu`} (Lat: {st.latitude}, Lng: {st.longitude})
-                  </p>
-
-                  <div className="grid grid-cols-3 gap-2 mt-4 p-3 rounded-2xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-center text-xs">
-                    <div>
-                      <span className="block text-[9px] uppercase font-mono text-[var(--text-muted)]">Live Bays</span>
-                      <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                        {availableBays} / {totalBays}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="block text-[9px] uppercase font-mono text-[var(--text-muted)]">Max Power</span>
-                      <span className="font-bold text-blue-600 dark:text-blue-400">{st.maxPower || 120} kW</span>
-                    </div>
-                    <div>
-                      <span className="block text-[9px] uppercase font-mono text-[var(--text-muted)]">Base Tariff</span>
-                      <span className="font-bold text-[var(--text-primary)]">₹{st.pricePerKwh || 18}/kWh</span>
-                    </div>
+                  <div>
+                    <div className="text-[10px] text-[var(--text-muted)] uppercase font-bold">Available</div>
+                    <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono text-sm">{st.availableChargers || st.available_slots || 4}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-[var(--text-muted)] uppercase font-bold">Capacity</div>
+                    <div className="font-bold text-amber-600 dark:text-amber-400 font-mono text-sm">{st.maxPowerKw || st.max_power || 150} kW</div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 pt-3 border-t border-[var(--border-subtle)]">
-                  <button
-                    onClick={() => handleOpenPricingModal(st)}
-                    className="flex-1 py-2 px-3 rounded-xl bg-[var(--bg-surface-raised)] hover:bg-[var(--border-subtle)] text-[var(--text-primary)] font-bold text-xs border border-[var(--border-subtle)] transition flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <Sliders size={13} className="text-[var(--accent-primary)]" />
-                    <span>Dynamic Pricing</span>
-                  </button>
-                  <button
-                    onClick={() => window.open(`https://www.google.com/maps?q=${st.latitude},${st.longitude}`, "_blank")}
-                    className="py-2 px-3 rounded-xl bg-[var(--bg-surface-raised)] hover:bg-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)] font-bold text-xs border border-[var(--border-subtle)] transition cursor-pointer"
-                    title="View on Maps"
-                  >
-                    <MapPin size={14} />
-                  </button>
+                <div className="flex items-center justify-between text-xs text-[var(--text-muted)] mb-2 px-1">
+                  <div className="flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>{st.openingHours || `${st.openingTime || st.opening_time || "06:00"} - ${st.closingTime || st.closing_time || "23:00"}`}</span>
+                  </div>
+                  <div>
+                    <span>Parking: <strong className="text-[var(--text-primary)] font-mono">{st.parkingCapacity || st.total_slots || 6} bays</strong></span>
+                  </div>
                 </div>
               </div>
-            );
-          })}
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 pt-3 border-t border-[var(--border-subtle)]">
+                <Link
+                  to={`/owner/chargers?stationId=${st.stationId || st.id}`}
+                  className="flex-1 py-2 text-center bg-blue-500/10 hover:bg-blue-500/20 text-[var(--accent-primary)] rounded-xl text-xs font-bold transition border border-blue-500/30"
+                >
+                  Manage Chargers
+                </Link>
+                <button
+                  onClick={() => openEditModal(st)}
+                  className="p-2 bg-[var(--bg-surface-raised)] hover:bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-primary)] rounded-xl transition border border-[var(--border-subtle)] cursor-pointer"
+                  title="Edit Station"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handleDeactivate(st.stationId || st.id)}
+                  className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl transition border border-rose-500/20 cursor-pointer"
+                  title="Deactivate Station"
+                >
+                  <Power className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* REGISTER NEW CHARGING STATION MODAL */}
+      {/* Add / Edit Station Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm overflow-y-auto">
-          <div className="theme-card w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 md:p-8 space-y-5 my-8">
-            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
-              <div>
-                <h3 className="text-lg font-bold text-[var(--text-primary)] flex items-center gap-2">
-                  <Building2 className="text-[var(--accent-primary)]" size={20} /> Register New Charging Station
-                </h3>
-                <p className="text-xs text-[var(--text-muted)]">
-                  Fill details and pinpoint GPS location on map for live network approval
-                </p>
-              </div>
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-3xl max-w-2xl w-full p-6 shadow-2xl animate-fade-in my-8 text-[var(--text-primary)]">
+            <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)] mb-5">
+              <h2 className="text-base font-bold text-[var(--text-primary)] flex items-center gap-2 font-mono">
+                <Building2 className="w-5 h-5 text-[var(--accent-primary)]" />
+                {editingStation ? `Edit Station ${editingStation.stationId || editingStation.id}` : "Commission New EV Station (MySQL)"}
+              </h2>
               <button
                 onClick={() => setShowAddModal(false)}
-                className="p-1 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)]"
               >
-                <X size={20} />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            {statusMsg.text && (
-              <div
-                className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
-                  statusMsg.type === "success"
-                    ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
-                    : "bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400"
-                }`}
-              >
-                {statusMsg.type === "success" ? <Check size={14} /> : <AlertCircle size={14} />}
-                <span>{statusMsg.text}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleRegisterStation} className="space-y-4 text-xs">
-              {/* Basic Details */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-[var(--text-muted)] uppercase mb-1">
-                    Station Name *
-                  </label>
+            <form onSubmit={handleCreateOrUpdate} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Station Name *</label>
                   <input
                     type="text"
+                    name="stationName"
+                    value={formData.stationName}
+                    onChange={handleInputChange}
+                    placeholder="e.g. GreenCharge HyperHub Vadapalani"
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-primary)] focus:outline-none"
                     required
-                    placeholder="e.g. GreenCharge Central Hub"
-                    value={stationName}
-                    onChange={(e) => setStationName(e.target.value)}
-                    className="w-full theme-input"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-[var(--text-muted)] uppercase mb-1">
-                    EV Network Name
-                  </label>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Street Address *</label>
                   <input
                     type="text"
-                    placeholder="e.g. GreenCharge Network"
-                    value={networkName}
-                    onChange={(e) => setNetworkName(e.target.value)}
-                    className="w-full theme-input"
+                    name="address"
+                    value={formData.address}
+                    onChange={handleInputChange}
+                    placeholder="183 Arcot Road, Vadapalani"
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-primary)] focus:outline-none"
+                    required
                   />
                 </div>
-              </div>
 
-              {/* Location Picker Map */}
-              <div>
-                <label className="block text-[11px] font-bold text-[var(--text-muted)] uppercase mb-1">
-                  Location Picker (Pinpoint on Map) *
-                </label>
-                <LocationPickerMap
-                  latitude={latitude}
-                  longitude={longitude}
-                  onLocationChange={handleLocationChange}
-                />
-              </div>
-
-              {/* Coordinates Preview */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <div>
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
-                    Latitude
-                  </label>
+                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">City</label>
+                  <input
+                    type="text"
+                    name="city"
+                    value={formData.city}
+                    onChange={handleInputChange}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-primary)] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Pincode</label>
+                  <input
+                    type="text"
+                    name="pincode"
+                    value={formData.pincode}
+                    onChange={handleInputChange}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-primary)] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">GPS Latitude *</label>
                   <input
                     type="number"
                     step="0.0001"
-                    value={latitude}
-                    onChange={(e) => setLatitude(parseFloat(e.target.value))}
-                    className="w-full theme-input font-mono"
+                    name="latitude"
+                    value={formData.latitude}
+                    onChange={handleInputChange}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-primary)] font-mono focus:outline-none"
+                    required
                   />
                 </div>
+
                 <div>
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
-                    Longitude
-                  </label>
+                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">GPS Longitude *</label>
                   <input
                     type="number"
                     step="0.0001"
-                    value={longitude}
-                    onChange={(e) => setLongitude(parseFloat(e.target.value))}
-                    className="w-full theme-input font-mono"
+                    name="longitude"
+                    value={formData.longitude}
+                    onChange={handleInputChange}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-primary)] font-mono focus:outline-none"
+                    required
                   />
                 </div>
+
                 <div>
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
-                    City
-                  </label>
+                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Grid Power Capacity (kW)</label>
                   <input
-                    type="text"
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    className="w-full theme-input"
+                    type="number"
+                    name="maxPowerKw"
+                    value={formData.maxPowerKw}
+                    onChange={handleInputChange}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-primary)] font-mono focus:outline-none"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
-                    Pincode
-                  </label>
+                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Parking Bays</label>
                   <input
-                    type="text"
-                    value={pincode}
-                    onChange={(e) => setPincode(e.target.value)}
-                    className="w-full theme-input font-mono"
+                    type="number"
+                    name="parkingCapacity"
+                    value={formData.parkingCapacity}
+                    onChange={handleInputChange}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-primary)] font-mono focus:outline-none"
                   />
                 </div>
               </div>
 
-              {/* Full Address */}
-              <div>
-                <label className="block text-[11px] font-bold text-[var(--text-muted)] uppercase mb-1">
-                  Full Street Address
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 183 Arcot Road, Vadapalani"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  className="w-full theme-input"
-                />
-              </div>
-
-              {/* Bays & Technical Specs */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <div>
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
-                    Total Bays
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="30"
-                    value={baysCount}
-                    onChange={(e) => setBaysCount(parseInt(e.target.value, 10))}
-                    className="w-full theme-input font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
-                    DC Fast Ports
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="20"
-                    value={dcChargers}
-                    onChange={(e) => setDcChargers(parseInt(e.target.value, 10))}
-                    className="w-full theme-input font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
-                    AC Standard Ports
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="20"
-                    value={acChargers}
-                    onChange={(e) => setAcChargers(parseInt(e.target.value, 10))}
-                    className="w-full theme-input font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
-                    Base Tariff (₹/kWh)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={chargingPrice}
-                    onChange={(e) => setChargingPrice(parseFloat(e.target.value))}
-                    className="w-full theme-input font-mono"
-                  />
-                </div>
-              </div>
-
-              {/* Contact & Hours */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <div>
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
-                    Contact Number
-                  </label>
-                  <input
-                    type="text"
-                    value={contactNumber}
-                    onChange={(e) => setContactNumber(e.target.value)}
-                    className="w-full theme-input font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
-                    24x7 Availability
-                  </label>
-                  <select
-                    value={is24x7 ? "yes" : "no"}
-                    onChange={(e) => setIs24x7(e.target.value === "yes")}
-                    className="w-full theme-input cursor-pointer font-bold"
-                  >
-                    <option value="yes">Yes, Open 24/7</option>
-                    <option value="no">Specific Hours</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
-                    Connectors
-                  </label>
-                  <input
-                    type="text"
-                    value={connectorTypes}
-                    onChange={(e) => setConnectorTypes(e.target.value)}
-                    className="w-full theme-input"
-                  />
-                </div>
-              </div>
-
-              {/* Submit Button */}
-              <div className="pt-3 border-t border-[var(--border-subtle)] flex justify-end gap-2">
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[var(--border-subtle)] mt-6">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 rounded-xl bg-[var(--bg-surface-raised)] text-[var(--text-primary)] font-bold text-xs cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl bg-[var(--bg-surface-raised)] text-[var(--text-primary)] text-xs font-bold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-6 py-2 rounded-xl bg-[var(--accent-primary)] hover:opacity-95 text-white font-bold text-xs shadow-md cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl bg-[var(--accent-primary)] hover:opacity-90 text-white text-xs font-bold shadow-lg shadow-blue-500/20 transition active:scale-95 disabled:opacity-50 cursor-pointer"
                 >
-                  {submitting ? "Registering..." : "Submit for Approval"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* DYNAMIC PRICING MODAL */}
-      {showPricingModal && selectedStationPricing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
-          <div className="theme-card w-full max-w-lg p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
-              <div>
-                <h3 className="font-bold text-base text-[var(--text-primary)] flex items-center gap-2">
-                  <Sliders size={18} className="text-[var(--accent-primary)]" />
-                  Dynamic Pricing Engine
-                </h3>
-                <p className="text-xs text-[var(--text-muted)]">{selectedStationPricing.stationName || selectedStationPricing.name}</p>
-              </div>
-              <button
-                onClick={() => setShowPricingModal(false)}
-                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {pricingSuccessMsg && (
-              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center gap-2">
-                <Check size={14} />
-                <span>{pricingSuccessMsg}</span>
-              </div>
-            )}
-
-            {pricingErrorMsg && (
-              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs font-bold flex items-center gap-2">
-                <AlertCircle size={14} />
-                <span>{pricingErrorMsg}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSavePricing} className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-[var(--text-muted)] uppercase mb-1">Peak Start Hour</label>
-                  <input
-                    type="time"
-                    value={pricingRules.peak_start}
-                    onChange={(e) => setPricingRules({ ...pricingRules, peak_start: e.target.value })}
-                    className="w-full theme-input font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-[var(--text-muted)] uppercase mb-1">Peak End Hour</label>
-                  <input
-                    type="time"
-                    value={pricingRules.peak_end}
-                    onChange={(e) => setPricingRules({ ...pricingRules, peak_end: e.target.value })}
-                    className="w-full theme-input font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-[var(--text-muted)] uppercase mb-1">Peak Multiplier</label>
-                  <input
-                    type="number"
-                    step="0.05"
-                    min="1.0"
-                    max="2.5"
-                    value={pricingRules.peak_multiplier}
-                    onChange={(e) => setPricingRules({ ...pricingRules, peak_multiplier: parseFloat(e.target.value) })}
-                    className="w-full theme-input font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-[var(--text-muted)] uppercase mb-1">Off-Peak Discount</label>
-                  <input
-                    type="number"
-                    step="0.05"
-                    min="0.0"
-                    max="0.5"
-                    value={pricingRules.offpeak_discount}
-                    onChange={(e) => setPricingRules({ ...pricingRules, offpeak_discount: parseFloat(e.target.value) })}
-                    className="w-full theme-input font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-[var(--border-subtle)] flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowPricingModal(false)}
-                  className="px-4 py-2 rounded-xl bg-[var(--bg-surface-raised)] text-[var(--text-primary)] font-bold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={pricingSaving}
-                  className="px-5 py-2 rounded-xl bg-[var(--accent-primary)] hover:opacity-95 text-white font-bold cursor-pointer"
-                >
-                  {pricingSaving ? "Saving..." : "Save Pricing Rules"}
+                  {submitting ? "Saving to MySQL..." : editingStation ? "Save Changes" : "Commission Station"}
                 </button>
               </div>
             </form>

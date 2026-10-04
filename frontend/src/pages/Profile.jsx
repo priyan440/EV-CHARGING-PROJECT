@@ -35,20 +35,23 @@ function Profile() {
     preferredConnector: "CCS",
   });
 
+  const [isSaving, setIsSaving] = useState(false);
+
   useEffect(() => {
     if (currentUser) {
+      const v = currentUser.vehicle || (currentUser.vehicles && currentUser.vehicles[0]) || {};
       setFormData({
         name: currentUser.name || "",
-        mobile: currentUser.mobile || "",
+        mobile: currentUser.mobile || currentUser.phone || "",
         address: currentUser.address || "",
         city: currentUser.city || "",
         pincode: currentUser.pincode || "",
-        vehicleNumber: currentUser.vehicle?.number || "",
-        vehicleType: currentUser.vehicle?.type || "Electric Car",
-        brand: currentUser.vehicle?.brand || "",
-        model: currentUser.vehicle?.model || "",
-        batteryCapacity: currentUser.vehicle?.batteryCapacity || "40.5",
-        batteryPercentage: currentUser.vehicle?.batteryPercentage || 65,
+        vehicleNumber: v.vehicle_number || v.number || "",
+        vehicleType: v.vehicle_type || v.type || "Electric Car",
+        brand: v.brand || "",
+        model: v.model || "",
+        batteryCapacity: v.battery_capacity || v.batteryCapacity || "40.5",
+        batteryPercentage: v.batteryPercentage || 65,
         preferredChargingType:
           currentUser.chargingPreference?.type || "DC Fast Charging",
         preferredConnector: currentUser.chargingPreference?.connector || "CCS",
@@ -63,33 +66,43 @@ function Profile() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
-    const res = updateProfile({
-      name: formData.name,
-      mobile: formData.mobile,
-      address: formData.address,
-      city: formData.city,
-      pincode: formData.pincode,
-      vehicle: {
-        number: formData.vehicleNumber,
-        type: formData.vehicleType,
-        brand: formData.brand,
-        model: formData.model,
-        batteryCapacity: formData.batteryCapacity,
-        batteryPercentage: Number(formData.batteryPercentage),
-      },
-      chargingPreference: {
-        type: formData.preferredChargingType,
-        connector: formData.preferredConnector,
-      },
-    });
+    setIsSaving(true);
+    try {
+      const res = await updateProfile({
+        name: formData.name,
+        mobile: formData.mobile,
+        phone: formData.mobile,
+        address: formData.address,
+        city: formData.city,
+        pincode: formData.pincode,
+        vehicle: {
+          number: formData.vehicleNumber,
+          vehicleNumber: formData.vehicleNumber,
+          type: formData.vehicleType,
+          vehicleType: formData.vehicleType,
+          brand: formData.brand,
+          model: formData.model,
+          batteryCapacity: formData.batteryCapacity,
+          batteryPercentage: Number(formData.batteryPercentage),
+        },
+        chargingPreference: {
+          type: formData.preferredChargingType,
+          connector: formData.preferredConnector,
+        },
+      });
 
-    if (res.success) {
-      setIsEditing(false);
-      setToast({ message: "Profile updated successfully!", type: "success" });
-    } else {
-      setToast({ message: res.message || "Failed to update profile", type: "error" });
+      if (res && res.success) {
+        setIsEditing(false);
+        setToast({ message: res.message || "Profile updated successfully in MySQL!", type: "success" });
+      } else {
+        setToast({ message: res?.message || "Failed to update profile", type: "error" });
+      }
+    } catch (err) {
+      setToast({ message: err.message || "An error occurred while updating profile", type: "error" });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -222,6 +235,20 @@ function Profile() {
               />
             </div>
 
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
+                Pincode
+              </label>
+              <input
+                type="text"
+                name="pincode"
+                disabled={!isEditing}
+                value={formData.pincode}
+                onChange={handleChange}
+                className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white disabled:opacity-75"
+              />
+            </div>
+
             <div className="sm:col-span-2">
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
                 Address
@@ -328,10 +355,11 @@ function Profile() {
         {isEditing && (
           <button
             type="submit"
-            className="w-full py-4 px-6 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm uppercase tracking-wider shadow-lg shadow-emerald-500/20 transition cursor-pointer flex items-center justify-center gap-2"
+            disabled={isSaving}
+            className="w-full py-4 px-6 rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-black text-sm uppercase tracking-wider shadow-lg shadow-emerald-500/20 transition cursor-pointer flex items-center justify-center gap-2"
           >
             <FiSave size={18} />
-            <span>SAVE PROFILE CHANGES</span>
+            <span>{isSaving ? "SAVING TO MYSQL..." : "SAVE PROFILE CHANGES"}</span>
           </button>
         )}
       </form>

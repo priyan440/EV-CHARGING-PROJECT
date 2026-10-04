@@ -15,15 +15,23 @@ api.interceptors.request.use(
   (config) => {
     try {
       const storedToken = localStorage.getItem("ev_token");
-      let userToken = null;
+      let user = null;
       try {
-        const user = JSON.parse(localStorage.getItem("ev_current_user") || "null");
-        userToken = user?.token;
+        user = JSON.parse(localStorage.getItem("ev_current_user") || "null");
       } catch {}
 
-      const token = storedToken || userToken;
+      const userToken = user?.token;
+      const userIdentifier = user?.counterId || user?.user_id || user?.userId || user?.email || user?.id;
+
+      const token = storedToken || userToken || userIdentifier;
       if (token && token !== "null" && token !== "undefined") {
         config.headers.Authorization = `Bearer ${token}`;
+      }
+      if (userIdentifier) {
+        config.headers["X-User-Id"] = String(user?.counterId || user?.user_id || user?.id || "");
+        if (user?.email) {
+          config.headers["X-User-Email"] = user.email;
+        }
       }
     } catch {
       // Ignore errors

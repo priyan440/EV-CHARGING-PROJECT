@@ -111,7 +111,7 @@ export default function ConflictModal({
                   <div>
                     <div className="text-[var(--text-muted)]">Vehicle</div>
                     <div className="font-bold text-[var(--text-primary)] font-mono">
-                      {reservationDetails.vehicleNumber || "TN58AB1234"}
+                      {reservationDetails.vehicleNumber || "N/A"}
                     </div>
                   </div>
                 </div>

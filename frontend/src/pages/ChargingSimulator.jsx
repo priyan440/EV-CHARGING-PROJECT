@@ -140,29 +140,29 @@ export default function ChargingSimulator() {
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="p-6 md:p-8 rounded-3xl bg-gradient-to-r from-[#0B1329] via-[#0D243B] to-[#0A3026] border border-slate-800 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="theme-card p-6 md:p-8 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <span className="px-3 py-1 text-[10px] font-extrabold uppercase font-mono tracking-wider bg-emerald-500/20 text-emerald-400 rounded-full border border-emerald-500/30 flex items-center gap-1.5">
-              <Sparkles size={12} className="text-emerald-400" /> WHAT-IF CHARGING SIMULATOR
+            <span className="px-3 py-1 text-[10px] font-extrabold uppercase font-mono tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full border border-emerald-500/30 flex items-center gap-1.5">
+              <Sparkles size={12} className="text-emerald-500" /> WHAT-IF CHARGING SIMULATOR
             </span>
-            <span className="px-3 py-1 text-[10px] font-extrabold font-mono tracking-wider bg-cyan-500/20 text-cyan-400 rounded-full border border-cyan-500/30">
+            <span className="px-3 py-1 text-[10px] font-extrabold font-mono tracking-wider bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-full border border-cyan-500/30">
               PHYSICS & TARIFF ENGINE
             </span>
           </div>
 
-          <h1 className="text-2xl md:text-3xl font-extrabold text-white flex items-center gap-2">
-            <Zap className="text-emerald-400" size={28} /> Smart Charging Simulator
+          <h1 className="text-2xl md:text-3xl font-extrabold text-[var(--text-primary)] flex items-center gap-2">
+            <Zap className="text-emerald-500" size={28} /> Smart Charging Simulator
           </h1>
 
-          <p className="text-xs text-slate-300 mt-1 max-w-2xl">
+          <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-2xl">
             Simulate realistic EV charging sessions with non-linear battery tapering above 80%, estimate cost and completion times, and compare multi-station charging alternatives.
           </p>
         </div>
 
         <button
           onClick={() => handleBookSlot(selectedStationId)}
-          className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs uppercase tracking-wider transition flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20 shrink-0"
+          className="px-6 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs uppercase tracking-wider transition flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20 shrink-0"
         >
           <CalendarCheck size={16} /> Book Simulated Slot
         </button>

@@ -63,7 +63,7 @@ export const getInvoice = async (identifier) => {
   }
 };
 
-export default {
+export const chargingService = {
   getActiveChargingSession,
   startChargingSession,
   updateLiveTelemetry,
@@ -71,3 +71,5 @@ export default {
   getChargingHistory,
   getInvoice,
 };
+
+export default chargingService;

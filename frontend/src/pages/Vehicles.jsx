@@ -19,8 +19,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
 import { vehicleService } from "../services/vehicleService";
 import Toast from "../components/Toast";
+import UpdateBatteryModal from "../components/UpdateBatteryModal";
+
+import { useNavigate, Link } from "react-router-dom";
+import Breadcrumbs from "../components/Breadcrumbs";
 
 export default function Vehicles() {
+  const navigate = useNavigate();
   const { currentUser } = useAuth();
   const customerId = currentUser?.counterId || "CUS0001";
 
@@ -31,42 +36,61 @@ export default function Vehicles() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [viewingVehicle, setViewingVehicle] = useState(null);
   const [editingVehicle, setEditingVehicle] = useState(null);
+  const [updatingSocVehicle, setUpdatingSocVehicle] = useState(null);
+
+  const formatLastUpdated = (dateStr) => {
+    if (!dateStr) return "Just now";
+    try {
+      const d = new Date(dateStr);
+      const now = new Date();
+      const diffMs = now - d;
+      if (diffMs < 60000) return "Just now";
+      if (diffMs < 3600000) return `${Math.floor(diffMs / 60000)}m ago`;
+      const isToday = d.toDateString() === now.toDateString();
+      const timeStr = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      if (isToday) return `Today, ${timeStr}`;
+      return `${d.toLocaleDateString([], { month: "short", day: "numeric" })}, ${timeStr}`;
+    } catch {
+      return "Recent";
+    }
+  };
 
   // Form State for Add / Edit
   const [formData, setFormData] = useState({
-    manufacturer: "Tata Motors",
-    model: "Nexon EV Max",
-    vehicleNumber: "TN58AB1234",
-    vehicleType: "Car",
-    batteryCapacity: 40.5,
-    batteryPercentage: 65,
+    manufacturer: "",
+    model: "",
+    vehicleNumber: "",
+    vehicleType: "4W",
+    batteryCapacity: "",
+    batteryPercentage: "",
     connectorType: "CCS2",
-    range: 312,
+    range: "",
   });
+
+  const [connectorTypesList, setConnectorTypesList] = useState([
+    { id: 1, connector_name: "CCS2" },
+    { id: 2, connector_name: "Type 2" },
+    { id: 3, connector_name: "CHAdeMO" },
+    { id: 4, connector_name: "GB/T" },
+  ]);
 
   const loadVehicles = async () => {
     try {
       const live = await vehicleService.fetchVehicles();
-      if (live && live.length > 0) {
-        setVehicles(live);
-        return;
-      }
-    } catch {
-      // Fallback to local
+      setVehicles(Array.isArray(live) ? live : []);
+    } catch (err) {
+      console.warn("Could not load vehicles:", err);
+      setVehicles([]);
     }
-    let list = vehicleService.getVehicles(customerId);
-    if (!list || list.length === 0) {
-      if (currentUser?.vehicles && currentUser.vehicles.length > 0) {
-        list = currentUser.vehicles;
-      } else {
-        list = vehicleService.getVehicles();
-      }
-    }
-    setVehicles(list || []);
   };
 
   useEffect(() => {
     loadVehicles();
+    vehicleService.getConnectorTypes().then((types) => {
+      if (Array.isArray(types) && types.length > 0) {
+        setConnectorTypesList(types);
+      }
+    }).catch(() => {});
   }, [customerId, currentUser]);
 
   const handleOpenAdd = () => {
@@ -87,40 +111,45 @@ export default function Vehicles() {
     e.preventDefault();
     if (!formData.vehicleNumber || !formData.model) return;
 
-    if (editingVehicle) {
-      // Edit existing
-      await vehicleService.updateVehicle(editingVehicle.id, {
-        manufacturer: formData.manufacturer,
-        brand: formData.manufacturer,
-        model: formData.model,
-        vehicleNumber: formData.vehicleNumber.toUpperCase(),
-        vehicleType: formData.vehicleType,
-        batteryCapacity: parseFloat(formData.batteryCapacity),
-        batteryPercentage: parseInt(formData.batteryPercentage, 10),
-        connectorType: formData.connectorType,
-        range: parseInt(formData.range, 10),
-      });
-      setToast({ message: `Vehicle ${formData.vehicleNumber} updated successfully!`, type: "success" });
-      setEditingVehicle(null);
-    } else {
-      // Add new
-      await vehicleService.addVehicle({
-        customerId,
-        ownerName: currentUser?.name || "EV User",
-        manufacturer: formData.manufacturer,
-        brand: formData.manufacturer,
-        model: formData.model,
-        vehicleNumber: formData.vehicleNumber.toUpperCase(),
-        vehicleType: formData.vehicleType,
-        batteryCapacity: parseFloat(formData.batteryCapacity),
-        batteryPercentage: parseInt(formData.batteryPercentage, 10),
-        connectorType: formData.connectorType,
-        range: parseInt(formData.range, 10),
-      });
-      setToast({ message: `New EV ${formData.vehicleNumber} added to garage!`, type: "success" });
-      setShowAddModal(false);
+    try {
+      if (editingVehicle) {
+        // Edit existing
+        await vehicleService.updateVehicle(editingVehicle.id, {
+          manufacturer: formData.manufacturer,
+          brand: formData.manufacturer,
+          model: formData.model,
+          vehicleNumber: formData.vehicleNumber.toUpperCase(),
+          vehicleType: formData.vehicleType,
+          batteryCapacity: parseFloat(formData.batteryCapacity),
+          batteryPercentage: parseInt(formData.batteryPercentage, 10),
+          connectorType: formData.connectorType,
+          range: parseInt(formData.range, 10),
+        });
+        setToast({ message: `Vehicle ${formData.vehicleNumber} updated successfully!`, type: "success" });
+        setEditingVehicle(null);
+      } else {
+        // Add new
+        await vehicleService.addVehicle({
+          customerId,
+          ownerName: currentUser?.name || "EV User",
+          manufacturer: formData.manufacturer,
+          brand: formData.manufacturer,
+          model: formData.model,
+          vehicleNumber: formData.vehicleNumber.toUpperCase(),
+          vehicleType: formData.vehicleType,
+          batteryCapacity: parseFloat(formData.batteryCapacity),
+          batteryPercentage: parseInt(formData.batteryPercentage, 10),
+          connectorType: formData.connectorType,
+          range: parseInt(formData.range, 10),
+        });
+        setToast({ message: `New EV ${formData.vehicleNumber} added to garage!`, type: "success" });
+        setShowAddModal(false);
+      }
+      await loadVehicles();
+    } catch (err) {
+      console.error("Save vehicle error:", err);
+      setToast({ message: err.message || "Failed to save vehicle. Please check inputs.", type: "error" });
     }
-    await loadVehicles();
   };
 
   const handleDeleteVehicle = async (vehicleId, number) => {
@@ -156,7 +185,9 @@ export default function Vehicles() {
   };
 
   return (
-    <div className="space-y-6 font-inter">
+    <div className="space-y-6 font-inter pb-12">
+      <Breadcrumbs items={[{ label: "My Vehicles", path: "/vehicles" }]} />
+
       <Toast
         message={toast.message}
         type={toast.type}
@@ -188,12 +219,12 @@ export default function Vehicles() {
             <span className="text-xl font-black text-blue-600 dark:text-blue-400 font-mono">{vehicles.length} EVs</span>
           </div>
 
-          <button
-            onClick={handleOpenAdd}
+          <Link
+            to="/vehicles/add"
             className="px-5 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-950 font-extrabold text-xs uppercase tracking-wider rounded-2xl transition flex items-center gap-2 shadow-lg shadow-emerald-500/20 cursor-pointer"
           >
             <Plus size={16} /> Add Vehicle
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -204,9 +235,9 @@ export default function Vehicles() {
             <Car size={32} />
           </div>
           <div className="space-y-1">
-            <h3 className="text-lg font-bold text-[var(--text-primary)]">No Electric Vehicles Registered Yet</h3>
+            <h3 className="text-lg font-bold text-[var(--text-primary)]">No vehicles found</h3>
             <p className="text-xs text-[var(--text-secondary)] max-w-md mx-auto leading-relaxed">
-              Add your EV to your garage to monitor battery capacity, view real-time range estimation, and enable fast 1-click slot booking.
+              Add your vehicle to view real-time battery status, charging specifications, and book charging slots.
             </p>
           </div>
           <button
@@ -294,17 +325,42 @@ export default function Vehicles() {
                   </div>
                 </div>
 
-                {/* Battery Bar */}
-                <div className="space-y-1.5 mb-5">
-                  <div className="flex justify-between text-[11px] font-bold text-[var(--text-secondary)]">
-                    <span>Current Charge State</span>
-                    <span className="text-emerald-600 dark:text-emerald-400 font-mono">{v.batteryPercentage || 65}%</span>
+                {/* Battery Bar & Latest Known SOC */}
+                <div className="space-y-2 mb-5 p-3 rounded-2xl bg-[var(--bg-card-subtle)] border border-[var(--border-subtle)]">
+                  <div className="flex justify-between items-center text-xs">
+                    <div>
+                      <span className="font-bold text-[var(--text-primary)] block">Latest Known Battery</span>
+                      <span className="text-[10px] font-mono text-[var(--text-secondary)]">
+                        Last updated: {formatLastUpdated(v.soc_updated_at || v.updated_at)}
+                      </span>
+                    </div>
+                    <span className={`font-mono font-black text-sm ${
+                      (v.current_soc_percent ?? v.batteryPercentage ?? 75) <= 20 ? "text-rose-500" : "text-emerald-600 dark:text-emerald-400"
+                    }`}>
+                      {v.current_soc_percent ?? v.batteryPercentage ?? 75}%
+                    </span>
                   </div>
-                  <div className="w-full bg-[var(--bg-card-subtle)] h-2 rounded-full overflow-hidden border border-[var(--border-subtle)]">
+
+                  <div className="w-full bg-[var(--bg-surface-raised)] h-2 rounded-full overflow-hidden border border-[var(--border-subtle)]">
                     <div
-                      className="bg-emerald-500 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${v.batteryPercentage || 65}%` }}
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        (v.current_soc_percent ?? v.batteryPercentage ?? 75) <= 20
+                          ? "bg-rose-500"
+                          : (v.current_soc_percent ?? v.batteryPercentage ?? 75) <= 50
+                          ? "bg-amber-500"
+                          : "bg-emerald-500"
+                      }`}
+                      style={{ width: `${v.current_soc_percent ?? v.batteryPercentage ?? 75}%` }}
                     />
+                  </div>
+
+                  <div className="pt-1 flex justify-end">
+                    <button
+                      onClick={() => setUpdatingSocVehicle(v)}
+                      className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[11px] font-mono font-bold transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Battery size={12} className="text-amber-500" /> Update Battery Level
+                    </button>
                   </div>
                 </div>
               </div>
@@ -312,13 +368,13 @@ export default function Vehicles() {
               {/* Actions Bar: VIEW, EDIT, DELETE, SET PRIMARY */}
               <div className="pt-3 border-t border-[var(--border-subtle)] flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => setViewingVehicle(v)}
-                    className="p-2 rounded-xl bg-[var(--bg-card-subtle)] hover:bg-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition cursor-pointer"
-                    title="View Details"
+                  <Link
+                    to={`/vehicles/${v.id}`}
+                    className="p-2 rounded-xl bg-[var(--bg-card-subtle)] hover:bg-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-emerald-500 transition cursor-pointer"
+                    title="View Full Vehicle Details"
                   >
                     <Eye size={15} />
-                  </button>
+                  </Link>
                   <button
                     onClick={() => startEdit(v)}
                     className="p-2 rounded-xl bg-[var(--bg-card-subtle)] hover:bg-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition cursor-pointer"
@@ -456,10 +512,15 @@ export default function Vehicles() {
                       onChange={(e) => setFormData({ ...formData, connectorType: e.target.value })}
                       className="theme-input w-full font-bold rounded-xl p-2.5 outline-none"
                     >
-                      <option value="CCS2">CCS2 (DC Fast)</option>
-                      <option value="Type 2">Type 2 (AC)</option>
-                      <option value="CHAdeMO">CHAdeMO</option>
-                      <option value="GB/T">GB/T</option>
+                      {connectorTypesList.map((ct) => {
+                        const name = ct.connector_name || ct.name || "CCS2";
+                        const desc = name === "CCS2" ? "CCS2 (DC Fast)" : name === "Type 2" ? "Type 2 (AC)" : name === "CHAdeMO" ? "CHAdeMO (DC)" : `${name} (DC Fast)`;
+                        return (
+                          <option key={ct.id || name} value={name}>
+                            {desc}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
                 </div>
@@ -587,6 +648,24 @@ export default function Vehicles() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Update Battery Modal */}
+      {updatingSocVehicle && (
+        <UpdateBatteryModal
+          isOpen={Boolean(updatingSocVehicle)}
+          vehicle={updatingSocVehicle}
+          onClose={() => setUpdatingSocVehicle(null)}
+          onSuccess={(updated) => {
+            setVehicles((prev) =>
+              prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item))
+            );
+            setToast({
+              message: `Updated battery level for ${updated.model || updated.brand} to ${updated.current_soc_percent ?? updated.batteryPercentage}%`,
+              type: "success",
+            });
+          }}
+        />
+      )}
     </div>
   );
 }

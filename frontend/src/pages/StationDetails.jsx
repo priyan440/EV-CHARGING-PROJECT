@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useSystemState } from "../contexts/SystemStateContext";
 import { useLocation } from "../contexts/LocationContext";
+import Breadcrumbs from "../components/Breadcrumbs";
 
 export default function StationDetails() {
   const { id } = useParams();
@@ -31,11 +32,18 @@ export default function StationDetails() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumbs
+        items={[
+          { label: "Find Stations", path: "/stations" },
+          { label: station?.name || station?.station_name || "Station Details", path: `/stations/${id}` },
+        ]}
+      />
+
       {/* Top Header & Navigation */}
       <div className="flex items-center justify-between">
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-slate-400 hover:text-white text-xs font-bold bg-slate-900 border border-slate-800 px-3.5 py-2 rounded-xl transition"
+          className="flex items-center gap-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs font-bold theme-input px-3.5 py-2 rounded-xl transition cursor-pointer"
         >
           <ArrowLeft size={16} /> Back to Stations
         </button>
@@ -66,10 +74,10 @@ export default function StationDetails() {
           </div>
 
           <button
-            onClick={() => navigate(`/customer/book?stationId=${station.id}`)}
-            className="px-6 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-950 font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/20 transition flex items-center justify-center gap-2"
+            onClick={() => navigate(`/book-slot?stationId=${station.id}`)}
+            className="px-6 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/20 transition flex items-center justify-center gap-2 cursor-pointer"
           >
-            <Zap size={16} className="fill-current" /> Reserve Charging Slot
+            <Zap size={16} className="fill-slate-950" /> ⚡ Book Charging Slot
           </button>
         </div>
 
@@ -145,14 +153,14 @@ export default function StationDetails() {
 
                   <button
                     disabled={!isAvail}
-                    onClick={() => navigate(`/customer/book?stationId=${station.id}&chargerId=${ch.id}`)}
-                    className={`w-full py-2.5 mt-3 rounded-xl font-bold text-xs transition ${
+                    onClick={() => navigate(`/book-slot?stationId=${station.id}&chargerId=${ch.id}`)}
+                    className={`w-full py-2.5 mt-3 rounded-xl font-black text-xs transition cursor-pointer ${
                       isAvail
-                        ? "bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-950"
+                        ? "bg-emerald-500 hover:bg-emerald-400 text-slate-950"
                         : "bg-[var(--bg-card-subtle)] text-[var(--text-muted)] cursor-not-allowed"
                     }`}
                   >
-                    {isAvail ? "Select Charger & Book" : "Currently Occupied"}
+                    {isAvail ? "⚡ Book This Slot" : "Currently Occupied"}
                   </button>
                 </div>
               );

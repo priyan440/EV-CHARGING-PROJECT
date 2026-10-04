@@ -137,37 +137,4 @@ CREATE TABLE IF NOT EXISTS technician_locations (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =======================================================
--- SEED INITIAL TECHNICIAN & WORKFLOW DATA
--- =======================================================
 
--- Seed Technician (ID: 4, Counter: TECH0001, Pass: tech123 / password123)
-INSERT INTO users (id, counter_id, name, email, password, phone, role, employee_id, specialization, experience, assigned_region, certifications) VALUES
-(4, 'TECH0001', 'Vijay Kumar', 'tech@evcharge.com', '$2a$10$vWIUvMHRIaR3.Fwnh5T8KOty9GJyYmkLxki0fuPaAiS0.FTd.IMkm', '9876543213', 'TECHNICIAN', 'EMP-TECH-2026', 'EV Charger & DC Fast Grid Maintenance', '4 Years', 'Tamil Nadu & Bangalore North', 'Certified EVSE Level 3 & High Voltage Safety')
-ON DUPLICATE KEY UPDATE name=VALUES(name), role='TECHNICIAN', employee_id=VALUES(employee_id), specialization=VALUES(specialization);
-
--- Seed Spare Parts Inventory
-INSERT INTO spare_parts (id, part_code, name, category, stock, location, status) VALUES
-(1, 'PRT-001', 'Liquid Cooled CCS2 250kW Cable Assembly', 'Cable Assembly', 6, 'Main Regional Warehouse', 'In Stock'),
-(2, 'PRT-002', '150kW SiC Inverter Power Module', 'Power Electronics', 3, 'Station 1 Secure Vault', 'In Stock'),
-(3, 'PRT-003', 'RFID Solenoid Lock Pin Actuator', 'Mechanical Locks', 10, 'Station 2 Toolroom', 'In Stock'),
-(4, 'PRT-004', 'Thermal Coolant Sensor Probe Array', 'Sensors', 14, 'Station 4 Cabinet', 'In Stock'),
-(5, 'PRT-005', 'Emergency Cutoff Breaker Relay 500A', 'Electrical Protection', 2, 'Main Regional Warehouse', 'Low Stock')
-ON DUPLICATE KEY UPDATE stock=VALUES(stock);
-
--- Seed Initial Maintenance Jobs
-INSERT INTO maintenance_jobs (id, job_id, station_id, charger_id, technician_id, issue, priority, status, reported_by, checklist) VALUES
-(1, 'JOB-2026-001', 1, 'BAY-02', 4, 'Bay 02 DC Fast Cable connector latch stuck and thermal warning', 'HIGH', 'Assigned', 'Customer Support Ticket #TCK-001', '{"electrical": "PASS", "cable": "FAIL", "connector": "FAIL", "emergencyStop": "PASS", "display": "PASS", "paymentTerminal": "PASS", "network": "PASS", "cooling": "PASS", "powerOutput": "PASS", "safety": "PASS"}'),
-(2, 'JOB-2026-002', 3, 'BAY-01', 4, 'Payment terminal NFC reader intermittent timeout during RFID scan', 'MEDIUM', 'In Progress', 'Station Owner', '{"electrical": "PASS", "cable": "PASS", "connector": "PASS", "emergencyStop": "PASS", "display": "PASS", "paymentTerminal": "FAIL", "network": "PASS", "cooling": "PASS", "powerOutput": "PASS", "safety": "PASS"}'),
-(3, 'JOB-2026-003', 2, 'BAY-01', 4, '500A Circuit Breaker tripped after high load DC charging session', 'CRITICAL', 'Accepted', 'Automated Grid Monitor', NULL)
-ON DUPLICATE KEY UPDATE status=VALUES(status);
-
--- Seed Initial Support Ticket
-INSERT INTO support_tickets (id, ticket_id, customer_id, station_id, booking_id, technician_id, category, description, priority, status) VALUES
-(1, 'TCK-2026-001', 3, 1, 'EV001', 4, 'Charging Problem', 'Charger Bay 02 cable latch would not disengage smoothly at end of session.', 'HIGH', 'In Progress')
-ON DUPLICATE KEY UPDATE status=VALUES(status);
-
--- Seed Initial Ticket Messages (Customer <-> Technician)
-INSERT INTO ticket_messages (id, ticket_id, sender_id, sender_name, sender_role, message) VALUES
-(1, 1, 3, 'Priyan Customer', 'CUSTOMER', 'Hi, Charger Bay 02 stopped charging at 45% and the lock pin was tight.'),
-(2, 1, 4, 'Vijay Kumar (Technician)', 'TECHNICIAN', 'Hello Priyan, I have received your report and I am currently en route to Station Central to inspect the solenoid and latch.')
-ON DUPLICATE KEY UPDATE message=VALUES(message);

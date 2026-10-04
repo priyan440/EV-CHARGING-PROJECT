@@ -48,6 +48,7 @@ export default function Welcome() {
     const r = (role || "").toUpperCase();
     if (r === "ADMIN") navigate("/admin/dashboard");
     else if (r === "STATION_OWNER" || r === "OWNER") navigate("/owner/dashboard");
+    else if (r === "TECHNICIAN" || r === "TECH") navigate("/technician/dashboard");
     else navigate("/customer/dashboard");
   };
 
@@ -57,6 +58,8 @@ export default function Welcome() {
     ? "/admin/dashboard"
     : (role || "").toUpperCase() === "STATION_OWNER" || (role || "").toUpperCase() === "OWNER"
     ? "/owner/dashboard"
+    : (role || "").toUpperCase() === "TECHNICIAN" || (role || "").toUpperCase() === "TECH"
+    ? "/technician/dashboard"
     : "/customer/dashboard";
 
   return (
@@ -153,33 +156,35 @@ export default function Welcome() {
           transition={{ duration: 0.6, delay: 0.1 }}
           className="text-center max-w-4xl mx-auto"
         >
-          <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black tracking-tight leading-[1.05] font-heading">
-            Power Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300">Journey.</span>
-            <br />
-            Charge <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-300 via-emerald-400 to-cyan-300">Smarter.</span>
+          <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black tracking-tight leading-[1.05] font-heading uppercase">
+            SMART EV <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-300">CHARGING</span>
           </h1>
 
-          <p className="mt-6 text-sm sm:text-base md:text-lg text-slate-400 max-w-2xl mx-auto font-normal leading-relaxed">
-            Next-generation intelligent EV charging ecosystem built for drivers, station owners, and a cleaner future. Real-time availability, non-linear simulations, and instant reservations.
+          <div className="mt-4 text-xl sm:text-2xl md:text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 to-teal-400 font-mono tracking-widest uppercase">
+            Find. Charge. Pay. Go.
+          </div>
+
+          <p className="mt-4 text-sm sm:text-base md:text-lg text-slate-400 max-w-2xl mx-auto font-normal leading-relaxed">
+            Commercial-grade intelligent EV charging ecosystem. Real-time availability, non-linear battery calculations, dynamic 24-hour slot reservation, and instant Razorpay payment.
           </p>
 
-          {/* CTA Buttons */}
+          {/* CTA Buttons (Section 2: GET STARTED, LOGIN) */}
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3.5">
             <button
               onClick={handleGetStarted}
               className="w-full sm:w-auto px-8 py-4 rounded-full bg-emerald-400 hover:bg-emerald-300 text-black font-black text-xs uppercase tracking-widest transition-all duration-200 shadow-xl shadow-emerald-500/25 flex items-center justify-center gap-2.5 group cursor-pointer hover:scale-105"
             >
-              <span>Get Started</span>
+              <span>GET STARTED</span>
               <ArrowRight size={15} className="group-hover:translate-x-1 transition-transform" />
             </button>
 
-            <a
-              href="#stations"
-              className="w-full sm:w-auto px-8 py-4 rounded-full bg-white/5 hover:bg-white/10 text-white border border-white/15 text-xs font-bold uppercase tracking-widest transition-all duration-200 backdrop-blur-md flex items-center justify-center gap-2 cursor-pointer"
+            <Link
+              to="/login"
+              className="w-full sm:w-auto px-8 py-4 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-black uppercase tracking-widest transition-all duration-200 backdrop-blur-md flex items-center justify-center gap-2 cursor-pointer hover:scale-105"
             >
-              <Compass size={15} className="text-emerald-400" />
-              <span>Explore Stations</span>
-            </a>
+              <User size={15} className="text-emerald-400" />
+              <span>LOGIN</span>
+            </Link>
           </div>
 
           {/* Live Network Status Indicator */}

@@ -32,9 +32,22 @@ export default function Payments() {
 
   const totalSpent = myPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
-  const handleTopUp = (e) => {
+  const [topUpLoading, setTopUpLoading] = useState(false);
+  const [topUpSuccess, setTopUpSuccess] = useState("");
+
+  const handleTopUp = async (e) => {
     e.preventDefault();
-    topUpWallet(topUpAmount);
+    setTopUpLoading(true);
+    setTopUpSuccess("");
+    try {
+      const res = await topUpWallet(topUpAmount);
+      if (res?.success) {
+        setTopUpSuccess(`Successfully credited ₹${topUpAmount} to your wallet!`);
+        setTimeout(() => setTopUpSuccess(""), 4000);
+      }
+    } finally {
+      setTopUpLoading(false);
+    }
   };
 
   const handleRaiseDispute = (e) => {
@@ -215,11 +228,18 @@ export default function Payments() {
                 />
               </div>
 
+              {topUpSuccess && (
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 rounded-xl text-xs font-bold text-center">
+                  {topUpSuccess}
+                </div>
+              )}
+
               <button
                 type="submit"
-                className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"
+                disabled={topUpLoading}
+                className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 disabled:opacity-50 cursor-pointer"
               >
-                <PlusCircle className="w-4 h-4" /> Top-Up Wallet via Razorpay Test Mode
+                <PlusCircle className="w-4 h-4" /> {topUpLoading ? "Crediting MySQL Wallet..." : "Top-Up Wallet via Razorpay Test Mode"}
               </button>
             </form>
           </div>
@@ -227,17 +247,23 @@ export default function Payments() {
           <div className="lg:col-span-7 theme-card p-6 rounded-3xl space-y-4">
             <h3 className="text-base font-bold text-[var(--text-primary)]">Wallet Transaction Ledger</h3>
             <div className="space-y-2">
-              {wallet.transactions.map((t) => (
-                <div key={t.id} className="p-3.5 rounded-xl bg-[var(--bg-card-subtle)] border border-[var(--border-subtle)] flex justify-between items-center text-xs">
-                  <div>
-                    <span className="font-bold text-[var(--text-primary)] block">{t.description}</span>
-                    <span className="text-[10px] text-[var(--text-muted)] font-mono">{t.id} • {new Date(t.date).toLocaleDateString()}</span>
-                  </div>
-                  <span className={`font-mono font-bold text-sm ${t.type === "CREDIT" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
-                    {t.type === "CREDIT" ? "+" : "-"}₹{t.amount}
-                  </span>
+              {!wallet.transactions || wallet.transactions.length === 0 ? (
+                <div className="p-8 text-center text-xs text-[var(--text-muted)] bg-[var(--bg-card-subtle)] rounded-xl border border-[var(--border-subtle)]">
+                  No wallet transactions found
                 </div>
-              ))}
+              ) : (
+                wallet.transactions.map((t) => (
+                  <div key={t.id} className="p-3.5 rounded-xl bg-[var(--bg-card-subtle)] border border-[var(--border-subtle)] flex justify-between items-center text-xs">
+                    <div>
+                      <span className="font-bold text-[var(--text-primary)] block">{t.description}</span>
+                      <span className="text-[10px] text-[var(--text-muted)] font-mono">{t.id} • {t.date ? new Date(t.date).toLocaleDateString() : "Today"}</span>
+                    </div>
+                    <span className={`font-mono font-bold text-sm ${t.type === "CREDIT" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                      {t.type === "CREDIT" ? "+" : "-"}₹{t.amount}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

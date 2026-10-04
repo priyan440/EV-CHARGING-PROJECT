@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5001/api";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -13,9 +13,16 @@ const api = axios.create({
 // Intercept request to attach JWT token if available
 api.interceptors.request.use(
   (config) => {
-    const user = JSON.parse(localStorage.getItem("ev_current_user") || "null");
-    if (user && user.token) {
-      config.headers.Authorization = `Bearer ${user.token}`;
+    let user = null;
+    try {
+      user = JSON.parse(localStorage.getItem("ev_current_user") || "null");
+    } catch {
+      user = null;
+    }
+    const directToken = localStorage.getItem("ev_token");
+    const token = directToken || user?.token || user?.counterId || user?.email || user?.id;
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
@@ -112,12 +119,42 @@ export const apiService = {
     }
   },
 
+  googleAuth: async (credential) => {
+    try {
+      const res = await api.post("/auth/google", { credential });
+      return res.data;
+    } catch (err) {
+      return {
+        success: false,
+        message: err.response?.data?.message || "Google authentication failed",
+      };
+    }
+  },
+
   getCounters: async () => {
     try {
       const res = await api.get("/auth/counters");
       return res.data;
     } catch {
       return null;
+    }
+  },
+
+  getProfile: async () => {
+    try {
+      const res = await api.get("/auth/me");
+      return res.data;
+    } catch (err) {
+      return { success: false, message: err.response?.data?.message || err.message };
+    }
+  },
+
+  updateProfile: async (data) => {
+    try {
+      const res = await api.put("/auth/profile", data);
+      return res.data;
+    } catch (err) {
+      return { success: false, message: err.response?.data?.message || err.message };
     }
   },
 

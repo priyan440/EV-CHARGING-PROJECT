@@ -26,6 +26,9 @@ import OTPInput from "../components/OTPInput";
 export default function Login() {
   const navigate = useNavigate();
   const {
+    currentUser,
+    isAuthenticated,
+    role,
     login,
     loginWithGoogle,
     sendOTP,
@@ -34,6 +37,17 @@ export default function Login() {
     completeGoogleCustomerRegistration,
     linkGoogleAccount,
   } = useAuth();
+
+  // Automatic redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated && role) {
+      const r = (role || "").toUpperCase();
+      if (r === "ADMIN") navigate("/admin/dashboard", { replace: true });
+      else if (r === "STATION_OWNER" || r === "OWNER") navigate("/owner/dashboard", { replace: true });
+      else if (r === "TECHNICIAN" || r === "TECH") navigate("/technician/dashboard", { replace: true });
+      else navigate("/user/dashboard", { replace: true });
+    }
+  }, [isAuthenticated, role, navigate]);
 
   // Auth Mode: "OTP" (default) or "PASSWORD"
   const [authMode, setAuthMode] = useState("OTP");
@@ -172,8 +186,10 @@ export default function Login() {
           navigate("/admin/dashboard");
         } else if (roleUpper === "STATION_OWNER" || roleUpper === "OWNER") {
           navigate("/owner/dashboard");
+        } else if (roleUpper === "TECHNICIAN" || roleUpper === "TECH") {
+          navigate("/technician/dashboard");
         } else {
-          navigate("/customer/dashboard");
+          navigate("/user/dashboard");
         }
       }, 500);
     } catch (err) {
@@ -259,8 +275,10 @@ export default function Login() {
           navigate("/admin/dashboard");
         } else if (roleUpper === "STATION_OWNER" || roleUpper === "OWNER") {
           navigate("/owner/dashboard");
+        } else if (roleUpper === "TECHNICIAN" || roleUpper === "TECH") {
+          navigate("/technician/dashboard");
         } else {
-          navigate("/customer/dashboard");
+          navigate("/user/dashboard");
         }
       }, 300);
     } catch (err) {
@@ -273,13 +291,13 @@ export default function Login() {
   /**
    * Google OAuth Success Handler (Automatic Role Detection)
    */
-  const handleGoogleSuccess = (credentialResponse) => {
+  const handleGoogleSuccess = async (credentialResponse) => {
     setErrorMsg("");
     setIsGoogleAuthenticating(true);
 
     try {
       // Pass null for automatic role detection based on account type / email
-      const res = loginWithGoogle(credentialResponse.credential, null);
+      const res = await loginWithGoogle(credentialResponse.credential, null);
       setIsGoogleAuthenticating(false);
 
       // Case 1: Successful login for existing Customer, Owner, or Admin
@@ -808,7 +826,7 @@ export default function Login() {
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => { setIdentifier("CUS0001"); setPassword("password123"); }}
+                  onClick={() => { setAuthMode("PASSWORD"); setIdentifier("CUS0001"); setPassword("password123"); }}
                   className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-300 border border-slate-200 dark:border-slate-700 font-mono text-[10px] transition cursor-pointer font-bold"
                   title="Fill Counter ID: CUS0001"
                 >
@@ -816,11 +834,11 @@ export default function Login() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setIdentifier("priyan@evcharge.com"); setPassword("password123"); }}
+                  onClick={() => { setAuthMode("PASSWORD"); setIdentifier("priyan@evcharge.com"); setPassword("password123"); }}
                   className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-300 border border-slate-200 dark:border-slate-700 text-[10px] transition cursor-pointer font-bold"
                   title="Fill Email: priyan@evcharge.com"
                 >
-                  Email: priyan@evcharge.com
+                  priyan@evcharge.com
                 </button>
               </div>
             </div>
@@ -830,7 +848,7 @@ export default function Login() {
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => { setIdentifier("OWNER0001"); setPassword("ownerpassword"); }}
+                  onClick={() => { setAuthMode("PASSWORD"); setIdentifier("OWNER0001"); setPassword("ownerpassword"); }}
                   className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-cyan-50 dark:hover:bg-cyan-500/20 text-slate-700 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-300 border border-slate-200 dark:border-slate-700 font-mono text-[10px] transition cursor-pointer font-bold"
                   title="Fill Counter ID: OWNER0001"
                 >
@@ -838,11 +856,33 @@ export default function Login() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setIdentifier("senthil@greencharge.com"); setPassword("ownerpassword"); }}
+                  onClick={() => { setAuthMode("PASSWORD"); setIdentifier("senthil@greencharge.com"); setPassword("ownerpassword"); }}
                   className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-cyan-50 dark:hover:bg-cyan-500/20 text-slate-700 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-300 border border-slate-200 dark:border-slate-700 text-[10px] transition cursor-pointer font-bold"
                   title="Fill Email: senthil@greencharge.com"
                 >
-                  Email: senthil@greencharge.com
+                  senthil@greencharge.com
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
+              <span className="font-bold text-amber-600 dark:text-amber-400">Technician:</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => { setAuthMode("PASSWORD"); setIdentifier("TECH0001"); setPassword("password123"); }}
+                  className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-500/20 text-slate-700 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-300 border border-slate-200 dark:border-slate-700 font-mono text-[10px] transition cursor-pointer font-bold"
+                  title="Fill Counter ID: TECH0001"
+                >
+                  ID: TECH0001
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAuthMode("PASSWORD"); setIdentifier("tech@evcharge.com"); setPassword("password123"); }}
+                  className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-500/20 text-slate-700 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-300 border border-slate-200 dark:border-slate-700 text-[10px] transition cursor-pointer font-bold"
+                  title="Fill Email: tech@evcharge.com"
+                >
+                  tech@evcharge.com
                 </button>
               </div>
             </div>
@@ -852,7 +892,7 @@ export default function Login() {
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => { setIdentifier("ADM0001"); setPassword("admin123"); }}
+                  onClick={() => { setAuthMode("PASSWORD"); setIdentifier("ADM0001"); setPassword("admin123"); }}
                   className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-500/20 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-300 border border-slate-200 dark:border-slate-700 font-mono text-[10px] transition cursor-pointer font-bold"
                   title="Fill Counter ID: ADM0001"
                 >
@@ -860,11 +900,11 @@ export default function Login() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setIdentifier("admin@evcharge.com"); setPassword("admin123"); }}
+                  onClick={() => { setAuthMode("PASSWORD"); setIdentifier("admin@evcharge.com"); setPassword("admin123"); }}
                   className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-500/20 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-300 border border-slate-200 dark:border-slate-700 text-[10px] transition cursor-pointer font-bold"
                   title="Fill Email: admin@evcharge.com"
                 >
-                  Email: admin@evcharge.com
+                  admin@evcharge.com
                 </button>
               </div>
             </div>

@@ -5,6 +5,8 @@ import {
   saveCustomer,
   getStationOwners,
   saveStationOwner,
+  getTechnicians,
+  saveTechnician,
   getCurrentUserFromStorage,
   setCurrentUserInStorage,
 } from "../utils/storage";
@@ -18,6 +20,17 @@ export const DEFAULT_ADMIN = {
   name: "System Administrator",
   email: "admin@evcharge.com",
   role: "ADMIN",
+  status: "Active",
+  authProvider: "password",
+};
+
+export const DEFAULT_TECHNICIAN = {
+  id: "TECH0001",
+  counterId: "TECH0001",
+  name: "Dave Wilson",
+  email: "tech@evcharge.com",
+  role: "TECHNICIAN",
+  specialization: "DC Ultra-Fast & High Voltage Charger Diagnostics",
   status: "Active",
   authProvider: "password",
 };
@@ -79,6 +92,13 @@ export function normalizeUser(user) {
     email: (user.email || "").toLowerCase(),
     mobile: user.mobile || user.phone || "",
     phone: user.phone || user.mobile || "",
+    address: user.address || "",
+    city: user.city || "",
+    state: user.state || "",
+    pincode: user.pincode || "",
+    company_name: user.company_name || user.companyName || "",
+    network_name: user.network_name || user.networkName || "",
+    specialization: user.specialization || "",
     profileImage: user.profileImage || user.picture || null,
     role: normalizedRole,
     rawRole: user.role,
@@ -90,7 +110,7 @@ export function normalizeUser(user) {
       type: "DC Fast Charging",
       connector: "CCS2",
     },
-    createdAt: user.createdAt || new Date().toISOString(),
+    createdAt: user.createdAt || user.created_at || new Date().toISOString(),
     lastLogin: new Date().toISOString(),
   };
 }
@@ -99,7 +119,8 @@ export const getRoleDashboardPath = (role) => {
   const r = (role || "").toUpperCase();
   if (r === "ADMIN") return "/admin/dashboard";
   if (r === "STATION_OWNER" || r === "OWNER") return "/owner/dashboard";
-  return "/customer/dashboard";
+  if (r === "TECHNICIAN" || r === "TECH") return "/technician/dashboard";
+  return "/user/dashboard";
 };
 
 // In-Memory Local OTP Store for standalone mode fallback
@@ -112,6 +133,28 @@ export const authService = {
   getCurrentUser: () => {
     const raw = getCurrentUserFromStorage();
     return raw ? normalizeUser(raw) : null;
+  },
+
+  /**
+   * Fetch Fresh User Profile directly from MySQL backend
+   */
+  fetchFreshProfile: async () => {
+    try {
+      const apiRes = await apiService.getProfile();
+      if (apiRes && apiRes.success && apiRes.user) {
+        const current = getCurrentUserFromStorage() || {};
+        const normalized = normalizeUser({
+          ...current,
+          ...apiRes.user,
+          token: current.token || localStorage.getItem("ev_token"),
+        });
+        setCurrentUserInStorage(normalized);
+        return normalized;
+      }
+    } catch (err) {
+      console.warn("Could not sync live profile from MySQL:", err.message);
+    }
+    return null;
   },
 
   /**
@@ -198,7 +241,10 @@ export const authService = {
     try {
       const apiRes = await apiService.verifyOTP(cleanEmail, cleanOtp);
       if (apiRes && apiRes.success && apiRes.user) {
-        const normalized = normalizeUser(apiRes.user);
+        if (apiRes.token) {
+          localStorage.setItem("ev_token", apiRes.token);
+        }
+        const normalized = normalizeUser({ ...apiRes.user, token: apiRes.token });
         setCurrentUserInStorage(normalized);
         return {
           success: true,
@@ -345,20 +391,16 @@ export const authService = {
 
   /**
    * Universal Password Login with Automatic Role Detection
-   * Connects to Live MongoDB Backend API with Local Storage fallback
+   * Connects to Live MySQL Backend API
    */
   loginWithPassword: async (identifier, password) => {
     if (!identifier || !identifier.trim()) {
-      return { success: false, message: "Please enter your Email or Counter ID." };
+      return { success: false, message: "Please enter your Email or User ID." };
     }
     if (!password) {
       return { success: false, message: "Please enter your password." };
     }
 
-    const cleanInput = identifier.trim().toUpperCase();
-    const cleanEmail = identifier.trim().toLowerCase();
-
-    // 1. LIVE BACKEND DATABASE QUERY FIRST
     try {
       const backendRes = await apiService.login({ identifier, password });
       if (backendRes && backendRes.success && backendRes.user) {
@@ -368,110 +410,72 @@ export const authService = {
         const normalized = normalizeUser({ ...backendRes.user, token: backendRes.token });
         setCurrentUserInStorage(normalized);
 
-        // Sync into local cache for offline capability
-        if (normalized.role === "CUSTOMER") {
-          saveCustomer(normalized);
-        } else if (normalized.role === "STATION_OWNER") {
-          saveStationOwner(normalized);
-        }
-
         return {
           success: true,
           user: normalized,
           role: normalized.role,
           message: backendRes.message || `Welcome, ${normalized.name}!`,
         };
-      } else if (backendRes && backendRes.message && backendRes.message !== "Backend offline") {
-        // Backend replied with a specific credentials error (e.g. Incorrect password)
-        return { success: false, message: backendRes.message };
-      }
-    } catch (apiErr) {
-      console.warn("Backend auth offline, using local database:", apiErr.message);
-    }
-
-    // 2. LOCAL RESILIENT FALLBACK (If backend is offline)
-    // A. ADMIN Check (by Counter ID ADM0001 or Admin Email)
-    const isAdminId = cleanInput === "ADM0001" || cleanInput.startsWith("ADM");
-    const isAdminEmail = cleanEmail === "admin@evcharge.com" || AUTHORIZED_ADMIN_EMAILS.some((e) => e.toLowerCase() === cleanEmail);
-
-    if (isAdminId || isAdminEmail) {
-      if (password === "admin123") {
-        const normalized = normalizeUser(DEFAULT_ADMIN);
-        setCurrentUserInStorage(normalized);
-        return {
-          success: true,
-          user: normalized,
-          role: "ADMIN",
-          redirectPath: "/admin/dashboard",
-          message: `Welcome Administrator, ${normalized.name}!`,
-        };
-      }
-      return { success: false, message: "Invalid Admin password." };
-    }
-
-    // B. STATION OWNER Check (by Counter ID OWNER0001 or Owner Email)
-    const owners = getStationOwners();
-    const owner = owners.find(
-      (o) =>
-        (o.counterId && o.counterId.toUpperCase() === cleanInput) ||
-        (o.email && o.email.toLowerCase() === cleanEmail)
-    );
-
-    if (owner) {
-      if (owner.password !== password) {
-        return { success: false, message: "Incorrect password." };
-      }
-      if (owner.status === "Suspended" || owner.status === "Rejected") {
+      } else {
         return {
           success: false,
-          message: `Your account is ${owner.status}. Please contact support.`,
+          message: backendRes?.message || "Invalid credentials.",
         };
       }
-
-      const { password: _, ...cleanOwner } = owner;
-      const normalized = normalizeUser({ ...cleanOwner, role: "STATION_OWNER" });
-      setCurrentUserInStorage(normalized);
-      return { success: true, user: normalized, role: "STATION_OWNER" };
+    } catch (apiErr) {
+      return {
+        success: false,
+        message: apiErr.response?.data?.message || apiErr.message || "Server unavailable. Please ensure the backend is running.",
+      };
     }
-
-    // C. CUSTOMER Check (by Counter ID CUS0001 or Customer Email)
-    const customers = getCustomers();
-    const customer = customers.find(
-      (c) =>
-        (c.counterId && c.counterId.toUpperCase() === cleanInput) ||
-        (c.email && c.email.toLowerCase() === cleanEmail)
-    );
-
-    if (customer) {
-      if (customer.password !== password) {
-        return { success: false, message: "Incorrect password." };
-      }
-
-      const { password: _, ...cleanCustomer } = customer;
-      const normalized = normalizeUser({ ...cleanCustomer, role: "CUSTOMER" });
-      setCurrentUserInStorage(normalized);
-      return { success: true, user: normalized, role: "CUSTOMER" };
-    }
-
-    return {
-      success: false,
-      message: `No account found for "${identifier}". Please check your Counter ID or Email.`,
-    };
   },
 
+
+
   /**
-   * Google OAuth 2.0 Login with Strict Role Security
+   * Google OAuth 2.0 Login with Strict Role Security & Backend Database Sync
    *
    * @param {string|object} credentialOrProfile - Google credential token or decoded profile
    * @param {string} intendedRole - Role selected on login screen (CUSTOMER, STATION_OWNER, ADMIN)
    */
-  loginWithGoogle: (credentialOrProfile, intendedRole = null) => {
+  loginWithGoogle: async (credentialOrProfile, intendedRole = null) => {
+    let credential = null;
     let profile = {};
 
     if (typeof credentialOrProfile === "string") {
+      credential = credentialOrProfile;
       profile = decodeGoogleCredential(credentialOrProfile);
     } else if (credentialOrProfile && typeof credentialOrProfile === "object") {
       profile = credentialOrProfile;
+      credential = credentialOrProfile.credential || credentialOrProfile.idToken || credentialOrProfile.token;
+    }
+
+    // 1. Try Live Backend Google OAuth First
+    if (credential) {
+      try {
+        const backendRes = await apiService.googleAuth(credential);
+        if (backendRes && backendRes.success && backendRes.user) {
+          if (backendRes.token) {
+            localStorage.setItem("ev_token", backendRes.token);
+          }
+          const normalized = normalizeUser({ ...backendRes.user, token: backendRes.token, authProvider: "google" });
+          setCurrentUserInStorage(normalized);
+          return {
+            success: true,
+            user: normalized,
+            role: normalized.role,
+            redirectPath: getRoleDashboardPath(normalized.role),
+            message: backendRes.message || `Signed in with Google as ${normalized.name}`,
+          };
+        } else if (backendRes && !backendRes.success && backendRes.message) {
+          return {
+            success: false,
+            message: backendRes.message,
+          };
+        }
+      } catch (err) {
+        console.warn("Backend Google auth error, using local fallback:", err);
+      }
     }
 
     const googleId = profile.sub || profile.id || profile.googleId;
@@ -741,10 +745,10 @@ export const authService = {
 
   /**
    * Register Regular Customer
-   * Saves to MongoDB database with auto-generated sequential Counter ID
+   * Saves to MySQL database with auto-generated sequential Counter ID
    */
   registerCustomer: async (formData) => {
-    // 1. Try Live MongoDB Backend First
+    // 1. Try Live MySQL Backend First
     try {
       const backendRes = await apiService.registerCustomer(formData);
       if (backendRes && backendRes.success && backendRes.user) {
@@ -753,6 +757,7 @@ export const authService = {
         }
         const normalized = normalizeUser({ ...backendRes.user, token: backendRes.token });
         saveCustomer(normalized);
+        setCurrentUserInStorage(normalized);
         return {
           success: true,
           counterId: backendRes.counterId,
@@ -829,10 +834,10 @@ export const authService = {
 
   /**
    * Register Station Owner
-   * Saves to MongoDB database with auto-generated sequential Owner Counter ID
+   * Saves to MySQL database with auto-generated sequential Owner Counter ID
    */
   registerOwner: async (formData) => {
-    // 1. Try Live MongoDB Backend First
+    // 1. Try Live MySQL Backend First
     try {
       const backendRes = await apiService.registerOwner(formData);
       if (backendRes && backendRes.success && backendRes.user) {
@@ -890,21 +895,48 @@ export const authService = {
   },
 
   /**
-   * Update Profile
+   * Update Profile (Persists to MySQL Database)
    */
-  updateProfile: (updatedData) => {
+  updateProfile: async (updatedData) => {
     const currentUser = getCurrentUserFromStorage();
     if (!currentUser) return { success: false, message: "No active user session" };
 
+    // 1. Live Backend Database Update (MySQL)
+    try {
+      const apiRes = await apiService.updateProfile(updatedData);
+      if (apiRes && apiRes.success && apiRes.user) {
+        const normalized = normalizeUser({
+          ...currentUser,
+          ...apiRes.user,
+          token: currentUser.token || localStorage.getItem("ev_token"),
+        });
+        setCurrentUserInStorage(normalized);
+
+        // Sync local cache
+        if (normalized.role === "CUSTOMER") {
+          saveCustomer(normalized);
+        } else if (normalized.role === "STATION_OWNER") {
+          saveStationOwner(normalized);
+        }
+
+        return {
+          success: true,
+          message: apiRes.message || "Profile updated successfully!",
+          user: normalized,
+        };
+      }
+    } catch (err) {
+      console.warn("Backend updateProfile fallback:", err.message);
+    }
+
+    // 2. Local Resilient Fallback
     if (currentUser.role === "CUSTOMER") {
       const customers = getCustomers();
       const existing = customers.find((c) => c.counterId === currentUser.counterId);
-      if (!existing) return { success: false, message: "User not found" };
-
       const updatedCustomer = {
-        ...existing,
+        ...(existing || currentUser),
         ...updatedData,
-        vehicle: { ...existing.vehicle, ...(updatedData.vehicle || {}) },
+        vehicle: { ...(existing?.vehicle || currentUser?.vehicle || {}), ...(updatedData.vehicle || {}) },
       };
 
       saveCustomer(updatedCustomer);
@@ -916,9 +948,7 @@ export const authService = {
     if (currentUser.role === "STATION_OWNER") {
       const owners = getStationOwners();
       const existing = owners.find((o) => o.counterId === currentUser.counterId);
-      if (!existing) return { success: false, message: "Owner not found" };
-
-      const updatedOwner = { ...existing, ...updatedData };
+      const updatedOwner = { ...(existing || currentUser), ...updatedData };
       saveStationOwner(updatedOwner);
       const normalized = normalizeUser(updatedOwner);
       setCurrentUserInStorage(normalized);
@@ -937,5 +967,26 @@ export const authService = {
   logoutUser: () => {
     localStorage.removeItem("ev_token");
     setCurrentUserInStorage(null);
+    const keysToRemove = [
+      "ev_user",
+      "ev_token",
+      "ev_bookings",
+      "ev_payments",
+      "ev_stations",
+      "ev_customers",
+      "ev_station_owners",
+      "ev_technicians",
+      "ev_sessions",
+      "ev_active_sessions",
+      "ev_wallet",
+      "ev_disputes",
+      "ev_settlements",
+      "ev_maintenance",
+      "ev_complaints",
+      "ev_reviews",
+      "ev_loyalty_points",
+      "ev_vehicles",
+    ];
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
   },
 };

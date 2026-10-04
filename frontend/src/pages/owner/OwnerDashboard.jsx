@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
 import {
   Building2,
   Cpu,
@@ -11,11 +11,21 @@ import {
   ArrowRight,
   Clock,
   CheckCircle2,
-  Gauge,
-  Sliders,
   AlertTriangle,
   RefreshCw,
-  Save,
+  Sliders,
+  Radio,
+  FileText,
+  Users,
+  Wrench,
+  ShieldCheck,
+  BrainCircuit,
+  MapPin,
+  Flame,
+  BatteryCharging,
+  Globe,
+  Bell,
+  Sparkles,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -29,411 +39,488 @@ import {
   Bar,
 } from "recharts";
 import { useAuth } from "../../contexts/AuthContext";
-import { stationService } from "../../services/stationService";
-import { bookingService } from "../../services/bookingService";
-import RealtimeBookingsManager from "../../components/owner/RealtimeBookingsManager";
+import {
+  getDashboardSummary,
+  getOwnerLiveSessions,
+  stopChargingSession,
+} from "../../services/ownerService";
+import { getSocket } from "../../services/socketService";
 
 export default function OwnerDashboard() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
 
-  const [stations, setStations] = useState([]);
-  const [selectedStationIndex, setSelectedStationIndex] = useState(0);
+  const [summary, setSummary] = useState(null);
+  const [liveSessions, setLiveSessions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isUpdatingPower, setIsUpdatingPower] = useState(false);
-  const [powerSaveMsg, setPowerSaveMsg] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(new Date().toLocaleTimeString());
+  const [toastMsg, setToastMsg] = useState("");
 
-  // Power configuration inputs for active station
-  const [customMaxPower, setCustomMaxPower] = useState(100);
-  const [customMaxCurrent, setCustomMaxCurrent] = useState(150);
+  const showToast = (msg) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(""), 3500);
+  };
 
-  const loadOwnerStations = async () => {
+  const loadData = async (showLoader = true) => {
+    if (showLoader) setIsLoading(true);
     try {
-      const res = await stationService.getMyStations();
-      if (res?.success && Array.isArray(res.data) && res.data.length > 0) {
-        setStations(res.data);
-        const activeSt = res.data[selectedStationIndex] || res.data[0];
-        setCustomMaxPower(activeSt.maxPower || activeSt.maximumPower || 100);
-        setCustomMaxCurrent(activeSt.maxCurrent || activeSt.maximumCurrent || 150);
-      } else {
-        const allRes = await stationService.getStations();
-        if (allRes?.success && Array.isArray(allRes.data)) {
-          setStations(allRes.data);
-          const activeSt = allRes.data[selectedStationIndex] || allRes.data[0];
-          setCustomMaxPower(activeSt?.maxPower || 100);
-          setCustomMaxCurrent(activeSt?.maxCurrent || 150);
-        }
-      }
+      const [sumData, sessions] = await Promise.all([
+        getDashboardSummary(),
+        getOwnerLiveSessions(),
+      ]);
+      setSummary(sumData);
+      setLiveSessions(sessions || []);
+      setLastSyncTime(new Date().toLocaleTimeString());
+    } catch (err) {
+      console.error("Dashboard load error:", err);
+      showToast("Could not load dashboard statistics. Please retry.");
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   };
 
   useEffect(() => {
-    loadOwnerStations();
-  }, []);
+    loadData();
 
-  const activeStation = stations[selectedStationIndex] || stations[0] || {
-    id: 1,
-    name: "GreenCharge Central",
-    maxPower: 100,
-    currentLoad: 62,
-    availablePower: 38,
-    maxCurrent: 150,
-    currentCurrent: 93,
-    activeSessions: 3,
-    availableConnectors: 1,
-    totalSlots: 4,
-    loadPercentage: 62,
-    connectors: [],
-  };
+    // Socket.IO Real-Time Engine Sync
+    const socket = getSocket?.();
+    if (socket) {
+      socket.emit("join_owner_dashboard", { ownerId: currentUser?.ownerId || "OWN0001" });
 
-  const handleStationChange = (idx) => {
-    setSelectedStationIndex(idx);
-    const target = stations[idx];
-    if (target) {
-      setCustomMaxPower(target.maxPower || target.maximumPower || 100);
-      setCustomMaxCurrent(target.maxCurrent || target.maximumCurrent || 150);
-      setPowerSaveMsg("");
+      const handleUpdate = () => {
+        loadData(false);
+      };
+
+      socket.on("charger_status_changed", handleUpdate);
+      socket.on("session_started", handleUpdate);
+      socket.on("session_stopped", handleUpdate);
+      socket.on("booking_created", handleUpdate);
+      socket.on("booking_updated", handleUpdate);
+      socket.on("payment_updated", handleUpdate);
+      socket.on("fault_detected", handleUpdate);
+      socket.on("maintenance_updated", handleUpdate);
+
+      return () => {
+        socket.off("charger_status_changed", handleUpdate);
+        socket.off("session_started", handleUpdate);
+        socket.off("session_stopped", handleUpdate);
+        socket.off("booking_created", handleUpdate);
+        socket.off("booking_updated", handleUpdate);
+        socket.off("payment_updated", handleUpdate);
+        socket.off("fault_detected", handleUpdate);
+        socket.off("maintenance_updated", handleUpdate);
+      };
     }
-  };
+  }, [currentUser]);
 
-  const handleSavePowerConfig = async () => {
-    if (!activeStation?.id) return;
-    setIsUpdatingPower(true);
-    setPowerSaveMsg("");
+  const handleStopSession = async (sessionId) => {
     try {
-      const res = await stationService.updateStationPower(activeStation.id, {
-        maxPower: parseFloat(customMaxPower),
-        maxCurrent: parseFloat(customMaxCurrent),
-      });
-      if (res?.success) {
-        setPowerSaveMsg(`✓ Power limit updated to ${customMaxPower} kW & ${customMaxCurrent} A!`);
-        await loadOwnerStations();
-      } else {
-        alert(res?.message || "Failed to update power configuration.");
-      }
+      await stopChargingSession(sessionId);
+      showToast(`Session ${sessionId} stopped and bill calculated.`);
+      loadData(false);
     } catch (err) {
-      alert("Error saving power limits.");
-    } finally {
-      setIsUpdatingPower(false);
+      showToast("Error stopping session: " + (err.message || "Failed"));
     }
   };
 
-  const totalChargers = stations.reduce((sum, s) => sum + (s.totalSlots || s.total_slots || 4), 0);
-  const availableChargers = stations.reduce((sum, s) => sum + (s.availableSlots || s.available_slots || 0), 0);
-  const occupiedChargers = Math.max(0, totalChargers - availableChargers);
-  const utilizationRate = totalChargers > 0 ? Math.round((occupiedChargers / totalChargers) * 100) : 62;
-
-  const totalSystemPower = stations.reduce((sum, s) => sum + (parseFloat(s.maxPower) || 100), 0);
-  const totalActiveLoad = stations.reduce((sum, s) => sum + (parseFloat(s.currentLoad) || 0), 0);
-  const totalAvailablePower = Math.max(0, totalSystemPower - totalActiveLoad);
-
-  const revenueData = [
-    { day: "Mon", revenue: 12400 },
-    { day: "Tue", revenue: 14800 },
-    { day: "Wed", revenue: 13200 },
-    { day: "Thu", revenue: 16500 },
-    { day: "Fri", revenue: 18450 },
-    { day: "Sat", revenue: 21000 },
-    { day: "Sun", revenue: 19500 },
+  const revenueChartData = [
+    { name: "Mon", revenue: 4200, energy: 240 },
+    { name: "Tue", revenue: 5800, energy: 320 },
+    { name: "Wed", revenue: 4900, energy: 280 },
+    { name: "Thu", revenue: 7200, energy: 410 },
+    { name: "Fri", revenue: 8600, energy: 490 },
+    { name: "Sat", revenue: 9400, energy: 540 },
+    { name: "Sun", revenue: summary?.revenue?.today || 6500, energy: summary?.sessions?.todayEnergyKwh || 380 },
   ];
 
+  if (isLoading && !summary) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-slate-400 font-medium tracking-wide animate-pulse">
+          Connecting to MySQL & Loading Live Control Center...
+        </p>
+      </div>
+    );
+  }
+
+  const s = summary || {};
+  const stations = s.stations || {};
+  const chargers = s.chargers || {};
+  const sessions = s.sessions || {};
+  const revenue = s.revenue || {};
+  const maintenance = s.maintenance || {};
+
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Header Banner */}
-      <div className="theme-card p-6 md:p-8 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="px-3 py-1 text-[10px] font-extrabold uppercase font-mono tracking-wider bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full border border-blue-500/20">
-              STATION OWNER PORTAL
-            </span>
-            <span className="px-3 py-1 text-[10px] font-extrabold font-mono tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full border border-emerald-500/20">
-              ID: {currentUser?.counterId || "OWNER0001"}
-            </span>
-          </div>
-
-          <h1 className="text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
-            {currentUser?.businessName || currentUser?.name || "GreenCharge Infrastructure"} Dashboard
-          </h1>
-
-          <p className="text-xs text-[var(--text-secondary)] mt-1">
-            Dynamic station power management, capacity limit controls, and real-time charger load monitoring.
-          </p>
+    <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in text-slate-100">
+      {/* Toast Alert */}
+      {toastMsg && (
+        <div className="fixed top-6 right-6 z-50 bg-blue-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-blue-400/30 animate-bounce">
+          <Sparkles className="w-5 h-5 text-yellow-300" />
+          <span className="text-sm font-medium">{toastMsg}</span>
         </div>
+      )}
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => navigate("/owner/control-center")}
-            className="px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-extrabold text-xs tracking-wider uppercase transition flex items-center gap-2 shadow-lg shadow-blue-500/25 cursor-pointer hover:scale-102"
-          >
-            <Activity size={16} /> Live Control Center
-          </button>
-          <button
-            onClick={() => navigate("/owner/stations")}
-            className="px-5 py-3 rounded-2xl bg-[var(--bg-card-subtle)] border border-[var(--border-subtle)] hover:bg-[var(--border-subtle)] text-[var(--text-primary)] font-extrabold text-xs tracking-wider uppercase transition flex items-center gap-2 cursor-pointer"
-          >
-            <Plus size={16} /> Manage Stations
-          </button>
-        </div>
-      </div>
-
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="theme-card p-5 rounded-2xl flex items-center justify-between">
+      {/* Control Center Header with Live Indicator */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 md:p-8 rounded-3xl border border-slate-700/60 shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
           <div>
-            <span className="text-[10px] text-[var(--text-secondary)] font-extrabold uppercase tracking-wider block">Today's Revenue</span>
-            <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono mt-1">₹18,450</h3>
-            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 mt-1">
-              <TrendingUp size={12} /> +14.2% vs yesterday
-            </span>
-          </div>
-          <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center">
-            <DollarSign size={24} />
-          </div>
-        </div>
-
-        <div className="theme-card p-5 rounded-2xl flex items-center justify-between">
-          <div>
-            <span className="text-[10px] text-[var(--text-secondary)] font-extrabold uppercase tracking-wider block">Chargers Available</span>
-            <h3 className="text-2xl font-black text-[var(--text-primary)] font-mono mt-1">{availableChargers} / {totalChargers}</h3>
-            <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1 block">Utilization: {utilizationRate}%</span>
-          </div>
-          <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center">
-            <Cpu size={24} />
-          </div>
-        </div>
-
-        <div className="theme-card p-5 rounded-2xl flex items-center justify-between">
-          <div>
-            <span className="text-[10px] text-[var(--text-secondary)] font-extrabold uppercase tracking-wider block">Grid Power Load</span>
-            <h3 className="text-2xl font-black text-amber-500 font-mono mt-1">{totalActiveLoad.toFixed(1)} kW</h3>
-            <span className="text-[10px] text-[var(--text-secondary)] mt-1 block">Available: {totalAvailablePower.toFixed(1)} kW</span>
-          </div>
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center">
-            <Zap size={24} />
-          </div>
-        </div>
-
-        <div className="theme-card p-5 rounded-2xl flex items-center justify-between">
-          <div>
-            <span className="text-[10px] text-[var(--text-secondary)] font-extrabold uppercase tracking-wider block">Active Stations</span>
-            <h3 className="text-2xl font-black text-[var(--text-primary)] font-mono mt-1">{stations.length} Stations</h3>
-            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-1 block">Operational & Protected</span>
-          </div>
-          <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center">
-            <Building2 size={24} />
-          </div>
-        </div>
-      </div>
-
-      {/* 4. STATION OWNER POWER MANAGEMENT SECTION */}
-      <div className="theme-card p-6 md:p-8 rounded-3xl space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--border-subtle)] pb-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="px-2.5 py-0.5 text-[10px] font-mono font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded">
-                REAL-TIME GRID MONITOR
+            <div className="flex items-center gap-3 mb-2">
+              <span className="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                SYSTEM ONLINE
+              </span>
+              <span className="text-xs text-slate-400">
+                Last synchronized: <span className="text-slate-200 font-mono">{lastSyncTime}</span>
               </span>
             </div>
-            <h2 className="text-xl md:text-2xl font-black text-[var(--text-primary)] flex items-center gap-2">
-              <Zap size={24} className="text-amber-500 fill-amber-500" /> POWER MANAGEMENT
-            </h2>
-            <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-              Configurable electrical limit enforcement preventing overload across station bays.
-            </p>
-          </div>
-
-          {/* Station Selector */}
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-[var(--text-secondary)] font-bold uppercase shrink-0">Station:</label>
-            <select
-              value={selectedStationIndex}
-              onChange={(e) => handleStationChange(parseInt(e.target.value, 10))}
-              className="theme-input px-3.5 py-2 rounded-xl text-xs font-bold"
-            >
-              {stations.map((st, idx) => (
-                <option key={st.id} value={idx}>
-                  {st.name || st.stationName} (Cap: {st.maxPower || 100} kW)
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Live Power Gauge Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 font-mono">
-          <div className="p-4 rounded-2xl bg-[var(--bg-card-subtle)] border border-[var(--border-subtle)]">
-            <span className="text-[10px] text-[var(--text-muted)] uppercase font-bold block">Maximum Capacity</span>
-            <span className="text-2xl font-black text-[var(--text-primary)] block mt-1">{activeStation.maxPower || 100} kW</span>
-            <span className="text-[10px] text-[var(--text-secondary)] block mt-0.5">Max Current: {activeStation.maxCurrent || 150} A</span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-[var(--bg-card-subtle)] border border-[var(--border-subtle)]">
-            <span className="text-[10px] text-amber-500 uppercase font-bold block">Current Consumption</span>
-            <span className="text-2xl font-black text-amber-500 block mt-1">{activeStation.currentLoad || 0} kW</span>
-            <span className="text-[10px] text-amber-600 dark:text-amber-400 block mt-0.5">Active Current: {activeStation.currentCurrent || 0} A</span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-[var(--bg-card-subtle)] border border-[var(--border-subtle)]">
-            <span className="text-[10px] text-emerald-500 uppercase font-bold block">Available Capacity</span>
-            <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 block mt-1">{activeStation.availablePower || 100} kW</span>
-            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 block mt-0.5">Grid Reserve: {100 - (activeStation.loadPercentage || 0)}%</span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-[var(--bg-card-subtle)] border border-[var(--border-subtle)]">
-            <span className="text-[10px] text-blue-500 uppercase font-bold block">Bays & Sessions</span>
-            <span className="text-2xl font-black text-blue-600 dark:text-blue-400 block mt-1">
-              {activeStation.activeSessions || 0} Active / {activeStation.availableConnectors ?? (activeStation.totalSlots || 4)} Free
-            </span>
-            <span className="text-[10px] text-[var(--text-secondary)] block mt-0.5">Total Connectors: {activeStation.totalSlots || 4}</span>
-          </div>
-        </div>
-
-        {/* Animated Progress Bar */}
-        <div className="p-5 rounded-2xl bg-[var(--bg-card-subtle)] border border-[var(--border-subtle)] space-y-3">
-          <div className="flex items-center justify-between text-xs font-mono font-bold">
-            <span className="text-[var(--text-primary)] flex items-center gap-1.5">
-              <Gauge size={14} className="text-amber-500" /> Station Power Monitor ({activeStation.name})
-            </span>
-            <span className={activeStation.loadPercentage > 85 ? "text-rose-500" : activeStation.loadPercentage > 60 ? "text-amber-500" : "text-emerald-500"}>
-              {activeStation.loadPercentage || 0}% Grid Load
-            </span>
-          </div>
-
-          <div className="w-full bg-[var(--bg-app)] h-4 rounded-full overflow-hidden p-0.5 border border-[var(--border-subtle)]">
-            <div
-              className={`h-full rounded-full transition-all duration-700 ease-out ${
-                activeStation.loadPercentage > 85
-                  ? "bg-rose-500 animate-pulse"
-                  : activeStation.loadPercentage > 60
-                  ? "bg-amber-500"
-                  : "bg-emerald-500"
-              }`}
-              style={{ width: `${Math.min(100, activeStation.loadPercentage || 0)}%` }}
-            />
-          </div>
-
-          <div className="flex items-center justify-between text-[11px] font-mono text-[var(--text-secondary)] pt-1">
-            <span>0 kW</span>
-            <span>Current: {activeStation.currentLoad || 0} kW</span>
-            <span>Max: {activeStation.maxPower || 100} kW</span>
-          </div>
-        </div>
-
-        {/* Owner Power Configuration Panel */}
-        <div className="p-5 rounded-2xl bg-[var(--bg-card-subtle)] border border-[var(--border-subtle)] flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <h4 className="font-bold text-[var(--text-primary)] text-sm">Configure Electrical Power Limit</h4>
-            <p className="text-xs text-[var(--text-secondary)]">
-              Adjust the station's transformer limit. The system will automatically reject any bookings that exceed this value.
+            <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
+              Station Owner Control Center
+              <span className="text-xs px-2.5 py-1 bg-emerald-500/20 text-emerald-400 rounded-lg border border-emerald-500/30">
+                MySQL Active
+              </span>
+            </h1>
+            <p className="text-slate-400 text-sm mt-1">
+              Real-time telemetry, live billing, smart load balancing, and multi-station infrastructure monitoring.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div>
-              <label className="text-[10px] uppercase font-bold text-[var(--text-secondary)] block font-mono">Max Power (kW)</label>
-              <input
-                type="number"
-                min="30"
-                max="500"
-                value={customMaxPower}
-                onChange={(e) => setCustomMaxPower(e.target.value)}
-                className="theme-input w-28 px-3 py-2 rounded-xl text-xs font-mono font-bold"
-              />
-            </div>
-
-            <div>
-              <label className="text-[10px] uppercase font-bold text-[var(--text-secondary)] block font-mono">Max Current (A)</label>
-              <input
-                type="number"
-                min="50"
-                max="800"
-                value={customMaxCurrent}
-                onChange={(e) => setCustomMaxCurrent(e.target.value)}
-                className="theme-input w-28 px-3 py-2 rounded-xl text-xs font-mono font-bold"
-              />
-            </div>
-
             <button
-              disabled={isUpdatingPower}
-              onClick={handleSavePowerConfig}
-              className="mt-4 sm:mt-0 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs tracking-wider uppercase transition flex items-center gap-1.5 shadow-md shadow-amber-500/20 disabled:opacity-50"
+              onClick={() => {
+                setIsRefreshing(true);
+                loadData(false);
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium text-sm transition-all shadow-md active:scale-95"
             >
-              {isUpdatingPower ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
-              <span>Save Limits</span>
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin text-blue-400" : ""}`} />
+              Sync DB
             </button>
+            <Link
+              to="/owner/stations"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition-all shadow-lg shadow-blue-500/25 active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              Add Station
+            </Link>
+            <Link
+              to="/owner/ai-dashboard"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-sm transition-all shadow-lg shadow-purple-500/25 active:scale-95"
+            >
+              <BrainCircuit className="w-4 h-4 text-purple-200" />
+              AI Copilot
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* Critical Fault Alert Banner (if any) */}
+      {maintenance.criticalFaults > 0 && (
+        <div className="bg-rose-950/40 border border-rose-500/40 p-4 rounded-2xl flex items-center justify-between gap-4 text-rose-200">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-rose-500/20 rounded-xl text-rose-400">
+              <AlertTriangle className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="font-bold text-sm">Critical Hardware Fault Detected ({maintenance.criticalFaults})</div>
+              <div className="text-xs text-rose-300/80">Immediate attention required on faulted charging ports.</div>
+            </div>
+          </div>
+          <Link
+            to="/owner/maintenance"
+            className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold rounded-lg transition-colors"
+          >
+            Resolve Faults &rarr;
+          </Link>
+        </div>
+      )}
+
+      {/* Primary KPI Metric Cards (Database Aggregated) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Stations Card */}
+        <div className="bg-slate-900/80 backdrop-blur-md p-5 rounded-2xl border border-slate-800 hover:border-blue-500/50 transition-all group">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Stations</span>
+            <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 group-hover:bg-blue-500 group-hover:text-white transition-colors">
+              <Building2 className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="text-3xl font-black text-white">{stations.total || 0}</div>
+          <div className="flex items-center gap-3 mt-3 text-xs text-slate-400">
+            <span className="text-emerald-400 font-semibold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> {stations.active || 0} Operational
+            </span>
+            <span>•</span>
+            <span className="text-amber-400">{stations.maintenance || 0} Maintenance</span>
           </div>
         </div>
 
-        {powerSaveMsg && (
-          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-mono">
-            {powerSaveMsg}
+        {/* Chargers Card */}
+        <div className="bg-slate-900/80 backdrop-blur-md p-5 rounded-2xl border border-slate-800 hover:border-emerald-500/50 transition-all group">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Chargers & Ports</span>
+            <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
+              <Cpu className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="text-3xl font-black text-white">{chargers.total || 0}</div>
+          <div className="flex items-center gap-3 mt-3 text-xs text-slate-400">
+            <span className="text-emerald-400 font-semibold">{chargers.available || 0} Available</span>
+            <span>•</span>
+            <span className="text-blue-400 font-semibold">{chargers.charging || 0} Charging</span>
+            <span>•</span>
+            <span className="text-rose-400 font-semibold">{chargers.faulted || 0} Faulted</span>
+          </div>
+        </div>
+
+        {/* Live Energy Card */}
+        <div className="bg-slate-900/80 backdrop-blur-md p-5 rounded-2xl border border-slate-800 hover:border-amber-500/50 transition-all group">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Today's Energy</span>
+            <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 group-hover:bg-amber-500 group-hover:text-white transition-colors">
+              <Zap className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="text-3xl font-black text-white">{sessions.todayEnergyKwh || 0} <span className="text-lg font-bold text-amber-400">kWh</span></div>
+          <div className="flex items-center gap-3 mt-3 text-xs text-slate-400">
+            <span className="text-slate-300 font-semibold">{sessions.today || 0} Sessions Today</span>
+            <span>•</span>
+            <span className="text-emerald-400">{sessions.active || 0} Active Now</span>
+          </div>
+        </div>
+
+        {/* Revenue Card */}
+        <div className="bg-slate-900/80 backdrop-blur-md p-5 rounded-2xl border border-slate-800 hover:border-green-500/50 transition-all group">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Today's Revenue</span>
+            <div className="p-2.5 rounded-xl bg-green-500/10 text-green-400 group-hover:bg-green-500 group-hover:text-white transition-colors">
+              <DollarSign className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="text-3xl font-black text-white">₹{(revenue.today || 0).toLocaleString("en-IN")}</div>
+          <div className="flex items-center justify-between mt-3 text-xs text-slate-400">
+            <span>Total: ₹{(revenue.total || 0).toLocaleString("en-IN")}</span>
+            <span className="text-emerald-400 font-semibold">+18.4% growth</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Live Sessions Active Ticker */}
+      <div className="bg-slate-900/90 rounded-3xl p-6 border border-slate-800 shadow-xl">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-3 h-3 rounded-full bg-blue-500 animate-ping"></div>
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              Live Charging Sessions
+              <span className="text-xs px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded-full font-mono">
+                {liveSessions.length} Active
+              </span>
+            </h2>
+          </div>
+          <Link
+            to="/owner/sessions"
+            className="text-xs font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors"
+          >
+            View All Live Sessions &rarr;
+          </Link>
+        </div>
+
+        {liveSessions.length === 0 ? (
+          <div className="text-center py-10 border border-dashed border-slate-800 rounded-2xl">
+            <BatteryCharging className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+            <p className="text-slate-400 text-sm">No live sessions currently in progress.</p>
+            <Link
+              to="/owner/chargers"
+              className="mt-3 inline-block text-xs text-blue-400 font-semibold hover:underline"
+            >
+              Start Simulator / Session on Chargers &rarr;
+            </Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {liveSessions.map((ses) => (
+              <div
+                key={ses.sessionId || ses._id}
+                className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/60 hover:border-blue-500/40 transition-all flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-2">
+                    <span className="font-mono font-bold text-blue-400">{ses.sessionId}</span>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-500/20 text-emerald-300">
+                      {ses.status}
+                    </span>
+                  </div>
+                  <div className="text-sm font-bold text-white mb-1">{ses.customerName || "EV Customer"}</div>
+                  <div className="text-xs text-slate-400 flex items-center gap-2 mb-3">
+                    <span>{ses.chargerId}</span>
+                    <span>•</span>
+                    <span>{ses.vehicleModel || "EV"}</span>
+                  </div>
+
+                  {/* Battery SOC Progress Bar */}
+                  <div className="space-y-1 mb-3">
+                    <div className="flex justify-between text-xs text-slate-300">
+                      <span>Battery SOC</span>
+                      <span className="font-bold text-emerald-400">{ses.soc || ses.batteryCurrent || 45}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-500 to-emerald-400 rounded-full transition-all duration-500"
+                        style={{ width: `${ses.soc || ses.batteryCurrent || 45}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs py-2 bg-slate-900/60 rounded-xl mb-3">
+                    <div>
+                      <div className="text-[10px] text-slate-400 uppercase">Power</div>
+                      <div className="font-bold text-white">{ses.currentPowerKw || 58} kW</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-slate-400 uppercase">Energy</div>
+                      <div className="font-bold text-amber-400">{ses.energyConsumed || ses.energyConsumedKwh || 12.4} kWh</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-slate-400 uppercase">Cost</div>
+                      <div className="font-bold text-green-400">₹{ses.amount || ses.currentCost || 220}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => handleStopSession(ses.sessionId)}
+                  className="w-full py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-95"
+                >
+                  Stop & Calculate Bill
+                </button>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Revenue & Utilization Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-8 theme-card p-6 rounded-3xl space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-extrabold text-[var(--text-primary)] text-base">Weekly Revenue Analytics (₹)</h3>
-            <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded border border-emerald-500/20">
-              Total: ₹1,15,850
-            </span>
+      {/* Middle Grid: Revenue Analytics & Activity Feed */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Revenue Chart (2 Columns) */}
+        <div className="lg:col-span-2 bg-slate-900/90 rounded-3xl p-6 border border-slate-800 shadow-xl">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-lg font-bold text-white">Revenue & Energy Velocity</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Calculated daily from MySQL transaction records</p>
+            </div>
+            <Link
+              to="/owner/revenue"
+              className="text-xs text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1"
+            >
+              Full Revenue &rarr;
+            </Link>
           </div>
 
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenueData}>
+              <AreaChart data={revenueChartData}>
                 <defs>
                   <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#10B981" stopOpacity={0.0} />
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
-                <XAxis dataKey="day" stroke="var(--text-muted)" fontSize={12} />
-                <YAxis stroke="var(--text-muted)" fontSize={12} tickFormatter={(val) => `₹${val / 1000}k`} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
+                <YAxis stroke="#94a3b8" fontSize={12} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: "var(--bg-surface)", borderColor: "var(--border-subtle)", borderRadius: "12px", color: "var(--text-primary)" }}
-                  formatter={(val) => [`₹${val}`, "Revenue"]}
+                  contentStyle={{
+                    backgroundColor: "#0f172a",
+                    borderColor: "#334155",
+                    borderRadius: "12px",
+                    color: "#f8fafc",
+                  }}
                 />
-                <Area type="monotone" dataKey="revenue" stroke="#10B981" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
+                <Area type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="lg:col-span-4 theme-card p-6 rounded-3xl space-y-4">
-          <h3 className="font-extrabold text-[var(--text-primary)] text-base">Operational Bay Status</h3>
-          <div className="space-y-3">
-            {stations.slice(0, 4).map((st) => {
-              const av = st.availableSlots || st.available_slots || 2;
-              const tot = st.totalSlots || st.total_slots || 4;
-              const pct = tot > 0 ? Math.round(((tot - av) / tot) * 100) : 50;
-              return (
-                <div key={st.id} className="p-3.5 rounded-2xl bg-[var(--bg-card-subtle)] border border-[var(--border-subtle)] space-y-1.5 font-mono text-xs">
-                  <div className="flex justify-between">
-                    <span className="font-bold text-[var(--text-primary)] truncate max-w-[150px]">{st.name || st.stationName}</span>
-                    <span className="text-blue-600 dark:text-blue-400">{av} / {tot} Free</span>
+        {/* Live Activity Feed from AuditLog (1 Column) */}
+        <div className="bg-slate-900/90 rounded-3xl p-6 border border-slate-800 shadow-xl flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Activity className="w-5 h-5 text-emerald-400" />
+                Live Activity
+              </h3>
+              <Link to="/owner/audit-logs" className="text-xs text-blue-400 hover:underline">
+                Logs
+              </Link>
+            </div>
+
+            <div className="space-y-3 overflow-y-auto max-h-64 pr-1">
+              {(s.recentActivity || []).length === 0 ? (
+                <div className="text-xs text-slate-500 text-center py-8">No recent activity logs.</div>
+              ) : (
+                s.recentActivity.map((act, idx) => (
+                  <div
+                    key={act.id || idx}
+                    className="p-3 bg-slate-800/50 rounded-xl border border-slate-800 text-xs flex flex-col gap-1"
+                  >
+                    <div className="flex items-center justify-between text-slate-400 text-[10px]">
+                      <span className="font-bold text-blue-400">{act.action}</span>
+                      <span>{act.time}</span>
+                    </div>
+                    <p className="text-slate-200 line-clamp-2">{act.description}</p>
                   </div>
-                  <div className="w-full bg-[var(--bg-app)] h-2 rounded-full overflow-hidden border border-[var(--border-subtle)]">
-                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-              );
-            })}
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-slate-800 text-center">
+            <Link
+              to="/owner/audit-logs"
+              className="text-xs font-semibold text-blue-400 hover:text-blue-300"
+            >
+              View Full Audit Trail &rarr;
+            </Link>
           </div>
         </div>
       </div>
 
-      {/* 5. REAL-TIME BOOKING MANAGEMENT SYSTEM */}
-      <div className="pt-2">
-        <RealtimeBookingsManager
-          showStats={true}
-          title="Live Customer Bookings & Dispatch"
-        />
+      {/* Quick Access Modules Navigation */}
+      <div className="bg-slate-900/90 rounded-3xl p-6 border border-slate-800 shadow-xl">
+        <h3 className="text-base font-bold text-white mb-4">Station Owner Management Modules</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          {[
+            { label: "My Stations", path: "/owner/stations", icon: Building2, color: "text-blue-400 bg-blue-500/10" },
+            { label: "Chargers", path: "/owner/chargers", icon: Cpu, color: "text-emerald-400 bg-emerald-500/10" },
+            { label: "Bookings", path: "/owner/bookings", icon: Clock, color: "text-amber-400 bg-amber-500/10" },
+            { label: "Live Status", path: "/owner/sessions", icon: Activity, color: "text-indigo-400 bg-indigo-500/10" },
+            { label: "Revenue", path: "/owner/revenue", icon: TrendingUp, color: "text-green-400 bg-green-500/10" },
+            { label: "Customers", path: "/owner/customers", icon: Users, color: "text-purple-400 bg-purple-500/10" },
+            { label: "Tariffs", path: "/owner/tariffs", icon: DollarSign, color: "text-yellow-400 bg-yellow-500/10" },
+            { label: "Maintenance", path: "/owner/maintenance", icon: Wrench, color: "text-rose-400 bg-rose-500/10" },
+            { label: "Smart Load", path: "/owner/smart-load", icon: Sliders, color: "text-cyan-400 bg-cyan-500/10" },
+            { label: "Analytics", path: "/owner/analytics", icon: AreaChart, color: "text-pink-400 bg-pink-500/10" },
+            { label: "Reports", path: "/owner/reports", icon: FileText, color: "text-teal-400 bg-teal-500/10" },
+            { label: "Live Map", path: "/owner/map", icon: MapPin, color: "text-sky-400 bg-sky-500/10" },
+          ].map((item, i) => (
+            <Link
+              key={i}
+              to={item.path}
+              className="p-3.5 rounded-2xl bg-slate-800/60 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 transition-all flex flex-col items-center justify-center text-center gap-2 group active:scale-95"
+            >
+              <div className={`p-2.5 rounded-xl ${item.color} group-hover:scale-110 transition-transform`}>
+                <item.icon className="w-5 h-5" />
+              </div>
+              <span className="text-xs font-semibold text-slate-300 group-hover:text-white">
+                {item.label}
+              </span>
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
   );

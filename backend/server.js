@@ -7,9 +7,14 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 import { connectDB, pool } from "./config/db.js";
-import { initializeDatabaseSchema } from "./database/seed_mysql.js";
+import { initializeDatabaseSchema } from "./database/init_schema.js";
 import authRoutes from "./routes/authRoutes.js";
+import ownerRoutes from "./routes/ownerRoutes.js";
 import vehicleRoutes from "./routes/vehicleRoutes.js";
+import complaintRoutes from "./routes/complaintRoutes.js";
+import tariffRoutes from "./routes/tariffRoutes.js";
+import batteryRoutes from "./routes/batteryRoutes.js";
+import walletRoutes from "./routes/walletRoutes.js";
 import networkRoutes from "./routes/networkRoutes.js";
 import stationRoutes from "./routes/stationRoutes.js";
 import slotRoutes from "./routes/slotRoutes.js";
@@ -20,6 +25,7 @@ import analyticsRoutes from "./routes/analyticsRoutes.js";
 import securityRoutes from "./routes/securityRoutes.js";
 import smartReservationRoutes from "./routes/smartReservationRoutes.js";
 import chargingRoutes from "./routes/chargingRoutes.js";
+import technicianRoutes from "./routes/technicianRoutes.js";
 import { getExternalStations } from "./controllers/stationController.js";
 
 import http from "http";
@@ -78,14 +84,30 @@ app.use(
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-User-Id",
+      "X-User-Email",
+      "X-Auth-Token",
+      "x-user-id",
+      "x-user-email",
+      "x-auth-token",
+      "x-refreshed-token",
+      "X-Refreshed-Token",
+      "Accept",
+      "Origin",
+      "X-Requested-With",
+    ],
+    exposedHeaders: ["X-Refreshed-Token", "x-refreshed-token"],
   })
 );
 
-// Rate Limiting
+// Rate Limiting (Permissive in development to support live polling & socket sync)
+const isDev = process.env.NODE_ENV !== "production";
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 300, // Limit each IP to 300 requests per 15 minutes
+  max: isDev ? 50000 : 1000, // High throughput in dev
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -96,7 +118,7 @@ const generalLimiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // Limit auth attempts to 20 per 15 minutes per IP
+  max: isDev ? 1000 : 20, // Limit auth attempts
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -153,6 +175,8 @@ app.get("/api/health", async (req, res) => {
 
 // Mount API Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/owner", ownerRoutes);
+app.use("/api/owners", ownerRoutes);
 app.use("/api/vehicles", vehicleRoutes);
 app.use("/api/networks", networkRoutes);
 app.use("/api/stations", stationRoutes);
@@ -163,8 +187,45 @@ app.use("/api/bookings", bookingRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/technicians", technicianRoutes);
+app.use("/api/technician", technicianRoutes);
 app.use("/api", smartReservationRoutes);
 app.use("/api/charging", chargingRoutes);
+app.use("/api/complaints", complaintRoutes);
+app.use("/api/complaint", complaintRoutes);
+app.use("/api/tariffs", tariffRoutes);
+app.use("/api/battery", batteryRoutes);
+app.use("/api/batteries", batteryRoutes);
+app.use("/api/wallet", walletRoutes);
+app.use("/api/wallets", walletRoutes);
+
+import { registerCustomer } from "./controllers/authController.js";
+app.post("/api/customers/register", registerCustomer);
+app.post("/api/customer/register", registerCustomer);
+app.post("/api/customers", registerCustomer);
+import { authenticate, optionalAuth } from "./middleware/authMiddleware.js";
+import { getAvailableConnectors } from "./controllers/bookingController.js";
+import { getConnectorTypes } from "./controllers/vehicleController.js";
+import { getStationConnectors, updateConnector, deleteConnector } from "./controllers/stationController.js";
+import {
+  updateChargerHeartbeat,
+  setChargerSimulateStatus,
+  startChargingSession as startOwnerChargingSession,
+  stopChargingSession as stopOwnerChargingSession,
+} from "./controllers/ownerController.js";
+
+app.get("/api/available-connectors", optionalAuth, getAvailableConnectors);
+app.get("/api/connector-types", optionalAuth, getConnectorTypes);
+app.get("/api/connectors/types", optionalAuth, getConnectorTypes);
+app.put("/api/connectors/:id", authenticate, updateConnector);
+app.delete("/api/connectors/:id", authenticate, deleteConnector);
+
+app.post("/api/chargers/heartbeat", updateChargerHeartbeat);
+app.post("/api/chargers/:chargerId/simulate-status", optionalAuth, setChargerSimulateStatus);
+app.post("/api/charging-sessions/start", authenticate, startOwnerChargingSession);
+app.post("/api/charging-sessions/:sessionId/stop", authenticate, stopOwnerChargingSession);
+app.post("/api/charging-sessions/stop/:sessionId", authenticate, stopOwnerChargingSession);
+
 app.use("/api/invoices", (req, res, next) => {
   req.url = "/invoices" + req.url;
   chargingRoutes(req, res, next);
@@ -206,7 +267,7 @@ initSocket(server, allowedOrigins);
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`⚡ EV Charging Server running on port ${PORT}`);
   console.log(`🔌 Real-Time Socket.IO Engine active`);
-  console.log(`🐬 MySQL Connected: ${process.env.DB_NAME || "ev_charging_db"}`);
+  console.log(`🐬 MySQL Connected: ${process.env.DB_NAME || "ev_charging_system"} @ ${process.env.DB_HOST || "localhost"}:${process.env.DB_PORT || "3306"}`);
   console.log(`💳 Razorpay Integration active (Key ID: ${process.env.RAZORPAY_KEY_ID ? "Configured" : "Not Set"})`);
 });
 

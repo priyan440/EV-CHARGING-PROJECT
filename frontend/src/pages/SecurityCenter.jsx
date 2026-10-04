@@ -146,22 +146,22 @@ export default function SecurityCenter() {
       )}
 
       {/* Header Banner */}
-      <div className="p-6 md:p-8 rounded-3xl bg-gradient-to-r from-[#0B1329] via-[#0E203B] to-[#122238] border border-slate-800 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="theme-card p-6 md:p-8 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <span className="px-3 py-1 text-[10px] font-extrabold uppercase font-mono tracking-wider bg-emerald-500/20 text-emerald-400 rounded-full border border-emerald-500/30 flex items-center gap-1.5">
-              <ShieldCheck size={12} className="text-emerald-400" /> ADVANCED SECURITY SHIELD
+            <span className="px-3 py-1 text-[10px] font-extrabold uppercase font-mono tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full border border-emerald-500/30 flex items-center gap-1.5">
+              <ShieldCheck size={12} className="text-emerald-500" /> ADVANCED SECURITY SHIELD
             </span>
-            <span className="px-3 py-1 text-[10px] font-extrabold font-mono tracking-wider bg-cyan-500/20 text-cyan-400 rounded-full border border-cyan-500/30">
+            <span className="px-3 py-1 text-[10px] font-extrabold font-mono tracking-wider bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-full border border-cyan-500/30">
               ROLE: {role || "USER"}
             </span>
           </div>
 
-          <h1 className="text-2xl md:text-3xl font-extrabold text-white">
+          <h1 className="text-2xl md:text-3xl font-extrabold text-[var(--text-primary)]">
             Security & Authentication Command Center
           </h1>
 
-          <p className="text-xs text-slate-300 mt-1 max-w-2xl">
+          <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-2xl">
             Control two-factor authentication, monitor active browser sessions, audit access history, and manage account credentials.
           </p>
         </div>
@@ -169,7 +169,7 @@ export default function SecurityCenter() {
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setShowPasswordModal(true)}
-            className="px-4 py-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700 text-white font-bold text-xs uppercase tracking-wider transition border border-slate-700 cursor-pointer flex items-center gap-1.5"
+            className="theme-input hover:border-blue-500 font-bold text-xs uppercase tracking-wider transition cursor-pointer flex items-center gap-1.5 shadow-sm"
           >
             <KeyRound size={15} /> Change Password
           </button>

@@ -1,7 +1,49 @@
 import api from "./api";
 
 export const bookingService = {
-  // Create a new booking in MySQL
+  // Query Real-Time Vehicle-Specific Compatible and Available Connectors
+  getAvailableConnectors: async (params) => {
+    try {
+      const res = await api.get("/available-connectors", { params });
+      return res.data;
+    } catch (err) {
+      console.error("bookingService getAvailableConnectors error:", err.message);
+      return {
+        success: false,
+        message: err.response?.data?.message || err.message || "Failed to retrieve available connectors",
+        connectors: [],
+        availableConnectors: [],
+      };
+    }
+  },
+
+  // Check slot availability and double-booking conflict
+  checkAvailability: async (payload) => {
+    try {
+      const res = await api.post("/bookings/check-availability", payload);
+      return res.data;
+    } catch (err) {
+      return {
+        success: false,
+        isAvailable: false,
+        available: false,
+        statusCode: err.response?.status || 500,
+        message: err.response?.data?.message || err.message || "Failed to check slot availability",
+      };
+    }
+  },
+
+  // Get existing bookings for a slot & date to disable conflicting times
+  getSlotBookings: async (params) => {
+    try {
+      const res = await api.get("/bookings/slot-bookings", { params });
+      return res.data;
+    } catch (err) {
+      return { success: false, data: [] };
+    }
+  },
+
+  // Create a new booking in MySQL with atomic transaction
   createBooking: async (bookingData) => {
     try {
       const res = await api.post("/bookings", bookingData);
@@ -9,6 +51,7 @@ export const bookingService = {
     } catch (err) {
       return {
         success: false,
+        statusCode: err.response?.status || 500,
         message: err.response?.data?.message || err.message || "Failed to create booking",
       };
     }
@@ -59,23 +102,23 @@ export const bookingService = {
       const res = await api.get("/bookings", { params });
       return res.data;
     } catch (err) {
-      console.warn("bookingService getBookings notice:", err.message);
-      return { success: false, data: [] };
+      console.error("bookingService getBookings error:", err.message);
+      throw new Error(err.response?.data?.message || err.message || "Failed to fetch bookings");
     }
   },
 
   // Get current user's personal bookings
   getMyBookings: async (params = {}) => {
     try {
-      const res = await api.get("/bookings/my", { params });
+      const res = await api.get("/bookings/my-bookings", { params });
       return res.data;
     } catch (err) {
-      console.warn("bookingService getMyBookings notice:", err.message);
-      return { success: false, data: [] };
+      console.error("bookingService getMyBookings error:", err.message);
+      throw new Error(err.response?.data?.message || err.message || "Failed to fetch customer bookings");
     }
   },
 
-  // Get single booking by ID (e.g. EV00125)
+  // Get single booking by ID
   getBookingById: async (bookingId) => {
     try {
       const res = await api.get(`/bookings/${bookingId}`);
@@ -101,7 +144,7 @@ export const bookingService = {
   // Update booking status (PENDING, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED, NO_SHOW)
   updateBooking: async (bookingId, status) => {
     try {
-      const res = await api.put(`/bookings/${bookingId}`, { status });
+      const res = await api.put(`/bookings/${bookingId}`, { status, booking_status: status });
       return res.data;
     } catch (err) {
       return {
@@ -119,7 +162,7 @@ export const bookingService = {
   // Cancel booking (automatically releases slot & capacity in MySQL)
   cancelBooking: async (bookingId) => {
     try {
-      const res = await api.put(`/bookings/${bookingId}/cancel`, { status: "CANCELLED" });
+      const res = await api.put(`/bookings/${bookingId}/cancel`, { status: "CANCELLED", booking_status: "CANCELLED" });
       return res.data;
     } catch (err) {
       return {
@@ -132,10 +175,49 @@ export const bookingService = {
   // Check-in
   checkInBooking: async (bookingId) => {
     try {
-      const res = await api.post("/bookings/check-in", { bookingId });
+      const res = await api.post("/bookings/check-in", { bookingId, status: "IN_PROGRESS" });
       return res.data;
     } catch (err) {
       return { success: false, message: err.response?.data?.message || err.message };
+    }
+  },
+
+  // Calculate realistic SOC-based charging energy and cost estimate from backend
+  estimateChargingCost: async (estimateParams) => {
+    try {
+      const res = await api.post("/charging/estimate", estimateParams);
+      return res.data;
+    } catch (err) {
+      return {
+        success: false,
+        message: err.response?.data?.message || err.message || "Failed to calculate charging estimate",
+      };
+    }
+  },
+
+  // Full 24-hour dynamic charging timeline for selected charger & date
+  getChargerTimeline: async (params) => {
+    try {
+      const res = await api.get("/slots/timeline", { params });
+      return res.data;
+    } catch (err) {
+      return {
+        success: false,
+        message: err.response?.data?.message || err.message || "Failed to fetch charging timeline",
+      };
+    }
+  },
+
+  // Earliest available valid interval for user's estimated duration
+  getEarliestSlot: async (params) => {
+    try {
+      const res = await api.get("/slots/earliest", { params });
+      return res.data;
+    } catch (err) {
+      return {
+        success: false,
+        message: err.response?.data?.message || err.message || "Failed to calculate earliest available slot",
+      };
     }
   },
 };

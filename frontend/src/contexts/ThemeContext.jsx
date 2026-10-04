@@ -5,18 +5,18 @@ const ThemeContext = createContext();
 
 export function ThemeProvider({ children }) {
   const [theme, setThemeState] = useState(() => {
-    // 1. Check localStorage for ev-theme or ev_theme
-    const saved = localStorage.getItem("ev-theme") || localStorage.getItem(KEYS.THEME);
+    // 1. Check localStorage for theme, ev-theme, or ev_theme
+    const saved =
+      localStorage.getItem("theme") ||
+      localStorage.getItem("ev-theme") ||
+      localStorage.getItem(KEYS.THEME);
+
     if (saved === "light" || saved === "dark") {
       return saved;
     }
-    // 2. Respect system preference for first-time users
-    if (typeof window !== "undefined" && window.matchMedia) {
-      if (window.matchMedia("(prefers-color-scheme: light)").matches) {
-        return "light";
-      }
-    }
-    return "dark";
+
+    // 2. Default is strictly LIGHT mode as per requirement
+    return "light";
   });
 
   const [fontSize, setFontSizeState] = useState(() => {
@@ -24,10 +24,17 @@ export function ThemeProvider({ children }) {
   });
 
   useEffect(() => {
+    // Persist across all standard keys
+    localStorage.setItem("theme", theme);
     localStorage.setItem("ev-theme", theme);
     localStorage.setItem(KEYS.THEME, theme);
 
     const root = document.documentElement;
+    root.setAttribute("data-theme", theme);
+    if (document.body) {
+      document.body.setAttribute("data-theme", theme);
+    }
+
     if (theme === "dark") {
       root.classList.add("dark");
       root.classList.remove("light");
@@ -79,3 +86,4 @@ export function ThemeProvider({ children }) {
 export function useTheme() {
   return useContext(ThemeContext);
 }
+export default ThemeContext;

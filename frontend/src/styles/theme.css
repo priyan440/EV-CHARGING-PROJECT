@@ -1,0 +1,210 @@
+/* ==========================================================================
+   GLOBAL EV CHARGE PRO THEME SYSTEM (CSS VARIABLES & UTILITIES)
+   Light Mode (Default) & Dark Mode Single Source of Truth
+   ========================================================================== */
+
+:root,
+:root[data-theme="light"],
+html[data-theme="light"],
+body[data-theme="light"] {
+  /* Backgrounds */
+  --bg-primary: #f5f8fc;
+  --bg-page: #f5f8fc;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-surface: #ffffff;
+  --bg-surface-raised: #f8fafc;
+  --bg-sidebar: #ffffff;
+  --bg-navbar: #ffffff;
+  --bg-hover: #f1f5f9;
+  --bg-input: #ffffff;
+
+  /* Typography */
+  --text-primary: #172033;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+
+  /* Borders */
+  --border-color: #dbe3ee;
+  --border-subtle: #dbe3ee;
+  --border-card: #dbe3ee;
+
+  /* Brand Accents */
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --accent-primary: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-light: rgba(37, 99, 235, 0.08);
+
+  /* Status Tokens */
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --ev-green: #10b981;
+  --ev-green-light: rgba(16, 185, 129, 0.10);
+  --status-available: #10b981;
+  --status-occupied: #f59e0b;
+  --status-offline: #64748b;
+  --status-error: #ef4444;
+
+  /* Shadows */
+  --shadow-soft: 0 4px 20px -2px rgba(15, 23, 42, 0.06), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
+  --shadow-card: 0 10px 25px -5px rgba(37, 99, 235, 0.05), 0 4px 10px -2px rgba(15, 23, 42, 0.03);
+}
+
+:root[data-theme="dark"],
+html.dark,
+html[data-theme="dark"],
+body.dark,
+body[data-theme="dark"] {
+  /* Backgrounds */
+  --bg-primary: #0f172a;
+  --bg-page: #070b14;
+  --bg-secondary: #111827;
+  --bg-card: #1e293b;
+  --bg-surface: #1e293b;
+  --bg-surface-raised: #111827;
+  --bg-sidebar: #111827;
+  --bg-navbar: #111827;
+  --bg-hover: #263449;
+  --bg-input: #1e293b;
+
+  /* Typography */
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+
+  /* Borders */
+  --border-color: #334155;
+  --border-subtle: #334155;
+  --border-card: #334155;
+
+  /* Brand Accents */
+  --primary: #3b82f6;
+  --primary-hover: #60a5fa;
+  --accent-primary: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-light: rgba(59, 130, 246, 0.15);
+
+  /* Status Tokens */
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --ev-green: #10b981;
+  --ev-green-light: rgba(16, 185, 129, 0.15);
+  --status-available: #10b981;
+  --status-occupied: #f59e0b;
+  --status-offline: #64748b;
+  --status-error: #ef4444;
+
+  /* Shadows */
+  --shadow-soft: 0 10px 30px -5px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --shadow-card: 0 14px 35px -5px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+/* Global Body Transition */
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+}
+
+/* ==========================================================================
+   REUSABLE THEME UTILITY CLASSES
+   ========================================================================== */
+
+.theme-page {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+}
+
+.theme-card {
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 1.5rem;
+  box-shadow: var(--shadow-card);
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.theme-card-subtle {
+  background-color: var(--bg-surface-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  border-radius: 1.25rem;
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.theme-panel {
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+}
+
+.theme-header {
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 1.5rem;
+  padding: 1.5rem 2rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.theme-sidebar {
+  background-color: var(--bg-sidebar);
+  color: var(--text-primary);
+  border-right: 1px solid var(--border-color);
+}
+
+.theme-navbar {
+  background-color: var(--bg-navbar);
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.theme-input {
+  background-color: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+}
+
+.theme-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--accent-light);
+}
+
+.theme-button-primary {
+  background-color: var(--primary);
+  color: #ffffff;
+  font-weight: 700;
+  border-radius: 0.75rem;
+  padding: 0.625rem 1rem;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.theme-button-primary:hover {
+  background-color: var(--primary-hover);
+}
+
+.theme-text-primary {
+  color: var(--text-primary);
+}
+
+.theme-text-secondary {
+  color: var(--text-secondary);
+}
+
+.theme-text-muted {
+  color: var(--text-muted);
+}
+
+.theme-border {
+  border-color: var(--border-color);
+}

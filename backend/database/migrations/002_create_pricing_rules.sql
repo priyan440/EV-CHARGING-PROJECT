@@ -18,12 +18,3 @@ CREATE TABLE IF NOT EXISTS pricing_rules (
         REFERENCES charging_stations(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Seed default pricing rules for existing stations (1, 2, 3, 4)
-INSERT INTO pricing_rules (station_id, peak_start, peak_end, peak_multiplier, offpeak_discount, utilization_threshold, max_multiplier) VALUES
-(1, '18:00:00', '21:00:00', 1.25, 0.15, 0.75, 1.50),
-(2, '18:00:00', '21:00:00', 1.25, 0.15, 0.75, 1.50),
-(3, '18:00:00', '21:00:00', 1.25, 0.15, 0.75, 1.50),
-(4, '18:00:00', '21:00:00', 1.25, 0.15, 0.75, 1.50)
-ON DUPLICATE KEY UPDATE 
-    peak_multiplier=VALUES(peak_multiplier), 
-    offpeak_discount=VALUES(offpeak_discount);

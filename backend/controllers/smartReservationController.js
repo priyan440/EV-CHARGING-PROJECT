@@ -271,7 +271,19 @@ export const createOfflineBooking = async (req, res) => {
 export const getStationLiveStatus = async (req, res) => {
   try {
     const { stationId } = req.params;
+
+    // Prefer Control Center Snapshot if available
+    try {
+      const { getOwnerControlCenterSnapshot } = await import("./ownerController.js");
+      return await getOwnerControlCenterSnapshot(req, res);
+    } catch (snapshotErr) {
+      console.warn("Control Center Snapshot fallback:", snapshotErr.message);
+    }
+
     const parsedStationId = parseInt(stationId, 10);
+    if (isNaN(parsedStationId)) {
+      return res.status(404).json({ success: false, message: "Station not found." });
+    }
 
     // 1. Run authoritative server-time state transition & no-show evaluator
     await evaluateStationStateTransitions(parsedStationId);
@@ -386,7 +398,7 @@ export const getStationLiveStatus = async (req, res) => {
           type: "ONLINE",
           bookingId: currentBooking.booking_id,
           customerName: currentBooking.customer_name || currentBooking.user_name || "Online EV User",
-          vehicleNumber: currentBooking.vehicle_number || currentBooking.veh_num || "TN58AB1234",
+          vehicleNumber: currentBooking.vehicle_number || currentBooking.veh_num || "N/A",
           vehicleModel: currentBooking.veh_model || "EV",
           startTime: currentBooking.start_time,
           endTime: currentBooking.end_time,
@@ -407,7 +419,7 @@ export const getStationLiveStatus = async (req, res) => {
           type: "UPCOMING",
           bookingId: upcomingBooking.booking_id,
           customerName: upcomingBooking.user_name || "Online EV User",
-          vehicleNumber: upcomingBooking.veh_num || "TN58AB1234",
+          vehicleNumber: upcomingBooking.veh_num || "N/A",
           startTime: upcomingBooking.start_time,
           endTime: upcomingBooking.end_time,
           timeUntilMinutes: Math.max(0, bStartMins - currentMinutes),
@@ -487,7 +499,7 @@ export const getStationLiveStatus = async (req, res) => {
         bookingId: b.booking_id,
         customerName: b.user_name || b.customer_name || "EV User",
         phone: b.user_phone || b.customer_phone || "",
-        vehicleNumber: b.veh_num || b.vehicle_number || "TN58AB1234",
+        vehicleNumber: b.veh_num || b.vehicle_number || "N/A",
         slotNumber: b.slot_number || "C01",
         startTime: b.start_time,
         endTime: b.end_time,

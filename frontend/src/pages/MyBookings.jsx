@@ -163,40 +163,40 @@ export default function MyBookings() {
   });
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto font-inter">
+    <div className="space-y-6 max-w-6xl mx-auto font-sans text-[var(--text-primary)]">
       {/* Page Header */}
-      <div className="bg-[#0B132B] border border-slate-800 p-6 md:p-8 rounded-3xl relative overflow-hidden shadow-2xl">
+      <div className="theme-card p-6 md:p-8 rounded-3xl relative overflow-hidden shadow-card">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-[10px] font-mono font-bold bg-blue-500/10 text-blue-400 px-3 py-1 rounded-full border border-blue-500/20 uppercase tracking-wider">
+              <span className="text-[10px] font-mono font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 px-3 py-1 rounded-full border border-blue-500/20 uppercase tracking-wider">
                 CUSTOMER PORTAL • {currentUser?.counterId || "CUS0001"}
               </span>
-              <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full border border-emerald-500/20">
+              <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-3 py-1 rounded-full border border-emerald-500/20">
                 USER-OWNED SESSIONS ONLY
               </span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-white flex items-center gap-3">
-              <CalendarCheck size={28} className="text-blue-400" /> MY BOOKINGS
+            <h1 className="text-2xl md:text-3xl font-extrabold text-[var(--text-primary)] flex items-center gap-3 font-heading">
+              <CalendarCheck size={28} className="text-blue-600 dark:text-blue-400" /> MY BOOKINGS
             </h1>
-            <p className="text-xs text-slate-400 mt-1 max-w-xl">
-              Manage your EV charging reservations, check in for scheduled slots, and view invoices.
+            <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-xl">
+              Manage your EV charging reservations, check in for scheduled slots, view charging QR codes, and download tax invoices.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
             <button
               onClick={() => fetchMyBookings(true)}
-              className="p-3 rounded-2xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-blue-400 hover:border-blue-500/40 transition flex items-center gap-2 text-xs font-bold shadow-sm"
+              className="p-3 rounded-2xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)] hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-500/40 transition flex items-center gap-2 text-xs font-bold shadow-sm cursor-pointer"
               title="Sync reservations"
             >
-              <RefreshCw size={15} className={isRefreshing ? "animate-spin text-blue-400" : ""} />
+              <RefreshCw size={15} className={isRefreshing ? "animate-spin text-blue-600 dark:text-blue-400" : ""} />
               <span>Sync</span>
             </button>
 
             <button
               onClick={() => navigate("/customer/book")}
-              className="px-5 py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs uppercase tracking-wider transition flex items-center gap-2 shadow-lg shadow-blue-600/30"
+              className="px-5 py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs uppercase tracking-wider transition flex items-center gap-2 shadow-lg shadow-blue-600/30 cursor-pointer"
             >
               <Zap size={16} className="fill-current" /> + NEW BOOKING
             </button>
@@ -205,7 +205,7 @@ export default function MyBookings() {
       </div>
 
       {errorMsg && (
-        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center gap-2">
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
           <AlertTriangle size={16} className="text-rose-500 shrink-0" />
           <span>{errorMsg}</span>
         </div>
@@ -213,33 +213,33 @@ export default function MyBookings() {
 
       {/* 4 Top Summary KPI Cards (Strictly Current User's Data) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="p-4 rounded-2xl bg-[#0B132B] border border-slate-800/80 shadow-md">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Bookings</span>
-          <div className="text-2xl font-black text-white mt-1 font-mono">{totalCount}</div>
-          <span className="text-[10px] text-slate-500 mt-0.5 block">Your reservations</span>
+        <div className="theme-card p-4 rounded-2xl">
+          <span className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider block">Total Bookings</span>
+          <div className="text-2xl font-black text-[var(--text-primary)] mt-1 font-mono">{totalCount}</div>
+          <span className="text-[10px] text-[var(--text-muted)] mt-0.5 block">Your reservations</span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-[#0B132B] border border-blue-500/20 shadow-md">
-          <span className="text-[11px] font-bold text-blue-400 uppercase tracking-wider block">Upcoming</span>
-          <div className="text-2xl font-black text-blue-400 mt-1 font-mono">{upcomingCount}</div>
-          <span className="text-[10px] text-slate-500 mt-0.5 block">Confirmed slots</span>
+        <div className="theme-card p-4 rounded-2xl border-blue-500/30">
+          <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider block">Upcoming</span>
+          <div className="text-2xl font-black text-blue-600 dark:text-blue-400 mt-1 font-mono">{upcomingCount}</div>
+          <span className="text-[10px] text-[var(--text-muted)] mt-0.5 block">Confirmed slots</span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-[#0B132B] border border-amber-500/20 shadow-md">
-          <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block">Checked-In</span>
-          <div className="text-2xl font-black text-amber-400 mt-1 font-mono">{checkedInCount}</div>
-          <span className="text-[10px] text-slate-500 mt-0.5 block">Ready to charge</span>
+        <div className="theme-card p-4 rounded-2xl border-amber-500/30">
+          <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider block">Checked-In</span>
+          <div className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1 font-mono">{checkedInCount}</div>
+          <span className="text-[10px] text-[var(--text-muted)] mt-0.5 block">Ready to charge</span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-[#0B132B] border border-emerald-500/20 shadow-md">
-          <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider block">Completed</span>
-          <div className="text-2xl font-black text-emerald-400 mt-1 font-mono">{completedCount}</div>
-          <span className="text-[10px] text-slate-500 mt-0.5 block">Past sessions</span>
+        <div className="theme-card p-4 rounded-2xl border-emerald-500/30">
+          <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block">Completed</span>
+          <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1 font-mono">{completedCount}</div>
+          <span className="text-[10px] text-[var(--text-muted)] mt-0.5 block">Past sessions</span>
         </div>
       </div>
 
       {/* Filter Tabs & Search Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--border-subtle)] pb-3">
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
           {[
             { label: "All", count: totalCount },
@@ -251,10 +251,10 @@ export default function MyBookings() {
             <button
               key={tab.label}
               onClick={() => setActiveTab(tab.label)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition shrink-0 ${
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition shrink-0 cursor-pointer ${
                 activeTab === tab.label
-                  ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 shadow-sm"
-                  : "text-slate-400 hover:text-white hover:bg-slate-900"
+                  ? "bg-blue-600/15 text-blue-600 dark:text-blue-400 border border-blue-500/40 shadow-sm"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-raised)]"
               }`}
             >
               {tab.label} ({tab.count})
@@ -263,39 +263,39 @@ export default function MyBookings() {
         </div>
 
         <div className="relative flex-1 sm:w-72">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
           <input
             type="text"
             placeholder="Search Booking ID, Station, Vehicle..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-800 pl-9 pr-3 py-2 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+            className="theme-input w-full pl-9 pr-3 py-2 text-xs"
           />
         </div>
       </div>
 
       {/* Bookings List Display */}
       {isLoading ? (
-        <div className="bg-[#0B132B] border border-slate-800 p-16 rounded-3xl text-center space-y-3 shadow-xl">
-          <RefreshCw size={32} className="animate-spin text-blue-400 mx-auto" />
-          <p className="text-sm font-bold text-slate-300">Retrieving your reservations...</p>
+        <div className="theme-card p-16 rounded-3xl text-center space-y-3 shadow-card">
+          <RefreshCw size={32} className="animate-spin text-blue-600 dark:text-blue-400 mx-auto" />
+          <p className="text-sm font-bold text-[var(--text-primary)]">Retrieving your reservations...</p>
         </div>
       ) : filteredBookings.length === 0 ? (
-        <div className="bg-[#0B132B] border border-slate-800 p-16 rounded-3xl text-center space-y-4 shadow-xl">
-          <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 text-slate-500 flex items-center justify-center mx-auto">
+        <div className="theme-card p-16 rounded-3xl text-center space-y-4 shadow-card">
+          <div className="w-16 h-16 rounded-2xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-muted)] flex items-center justify-center mx-auto">
             <CalendarCheck size={32} />
           </div>
-          <h4 className="font-extrabold text-white text-lg">
+          <h4 className="font-extrabold text-[var(--text-primary)] text-lg">
             {searchTerm ? "No Matching Reservations" : "No Bookings Yet"}
           </h4>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto">
+          <p className="text-xs text-[var(--text-secondary)] max-w-sm mx-auto">
             {searchTerm
               ? `No reservations matching "${searchTerm}". Try adjusting your search query.`
               : "You haven't reserved a charging slot yet. Reserve your connector bay in advance."}
           </p>
           <button
             onClick={() => navigate("/customer/book")}
-            className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition"
+            className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition cursor-pointer"
           >
             BOOK YOUR FIRST CHARGING SLOT
           </button>
@@ -313,43 +313,43 @@ export default function MyBookings() {
             return (
               <div
                 key={b.bookingId || b.id}
-                className="bg-[#0B132B] border border-slate-800 rounded-3xl p-6 space-y-4 shadow-xl hover:border-slate-700 transition"
+                className="theme-card rounded-3xl p-6 space-y-4 shadow-card hover:border-blue-500/40 transition"
               >
                 {/* Card Top: Booking ID & Status Badge */}
-                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm font-extrabold text-blue-400">
+                    <span className="font-mono text-sm font-extrabold text-blue-600 dark:text-blue-400">
                       {b.bookingId || `EV${String(b.id).padStart(4, "0")}`}
                     </span>
-                    <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                    <span className="text-[10px] font-mono text-[var(--text-secondary)] bg-[var(--bg-surface-raised)] px-2 py-0.5 rounded border border-[var(--border-subtle)]">
                       {b.counterId || "CUS0001"}
                     </span>
                   </div>
 
                   <div>
                     {isConfirmed && (
-                      <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/30">
+                      <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30">
                         CONFIRMED
                       </span>
                     )}
                     {isCheckedIn && (
-                      <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                      <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30">
                         CHECKED IN
                       </span>
                     )}
                     {isActive && (
-                      <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 animate-pulse">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                      <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 animate-pulse">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                         CHARGING ACTIVE
                       </span>
                     )}
                     {isCompleted && (
-                      <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                      <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
                         ✓ COMPLETED
                       </span>
                     )}
                     {isCancelled && (
-                      <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">
+                      <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30">
                         {st === "NO_SHOW" ? "NO-SHOW" : "CANCELLED"}
                       </span>
                     )}
@@ -358,75 +358,76 @@ export default function MyBookings() {
 
                 {/* Station & Schedule Details */}
                 <div>
-                  <h3 className="font-bold text-white text-base">{b.stationName || "GreenCharge Central"}</h3>
-                  <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                    <MapPin size={13} className="text-slate-500 shrink-0" />
-                    <span className="truncate">{b.stationAddress || "183 Arcot Road, Vadapalani, Chennai"}</span>
+                  <h3 className="font-bold text-[var(--text-primary)] text-base">{b.stationName || "Station Unavailable"}</h3>
+                  <p className="text-xs text-[var(--text-secondary)] flex items-center gap-1 mt-0.5">
+                    <MapPin size={13} className="text-[var(--text-muted)] shrink-0" />
+                    <span className="truncate">{b.stationAddress || "Address not provided"}</span>
                   </p>
                 </div>
 
                 {/* Schedule, Vehicle & Connector Grid */}
-                <div className="grid grid-cols-2 gap-3 bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800/80 text-xs">
+                <div className="grid grid-cols-2 gap-3 bg-[var(--bg-surface-raised)] p-3.5 rounded-2xl border border-[var(--border-subtle)] text-xs">
                   <div>
-                    <span className="text-[10px] text-slate-500 block uppercase font-bold tracking-wider">Date & Time</span>
-                    <span className="font-bold text-slate-200 mt-0.5 block">{b.date || b.bookingDate || "Today"}</span>
-                    <span className="text-slate-400 text-[11px]">{b.timeSlot || `${b.startTime || "10:00"} - ${b.endTime || "11:00"}`}</span>
+                    <span className="text-[10px] text-[var(--text-muted)] block uppercase font-bold tracking-wider">Date & Time</span>
+                    <span className="font-bold text-[var(--text-primary)] mt-0.5 block">{b.date || b.bookingDate || "N/A"}</span>
+                    <span className="text-[var(--text-secondary)] text-[11px]">{b.timeSlot || `${b.startTime || "N/A"} - ${b.endTime || "N/A"}`}</span>
                   </div>
 
                   <div>
-                    <span className="text-[10px] text-slate-500 block uppercase font-bold tracking-wider">Vehicle</span>
-                    <span className="font-bold text-slate-200 mt-0.5 block truncate">{b.vehicleModel || "Tata Nexon EV Max"}</span>
-                    <span className="text-slate-400 font-mono text-[11px]">{b.vehicleNumber || "TN58AB1234"}</span>
+                    <span className="text-[10px] text-[var(--text-muted)] block uppercase font-bold tracking-wider">Vehicle</span>
+                    <span className="font-bold text-[var(--text-primary)] mt-0.5 block truncate">{b.vehicleModel || "Standard EV"}</span>
+                    <span className="text-[var(--text-secondary)] font-mono text-[11px]">{b.vehicleNumber || "N/A"}</span>
                   </div>
 
                   <div>
-                    <span className="text-[10px] text-slate-500 block uppercase font-bold tracking-wider">Connector</span>
-                    <span className="font-bold text-blue-400 mt-0.5 block">{b.connectorId || "STA001-C01"}</span>
-                    <span className="text-slate-400 text-[11px]">{b.connectorType || "CCS2"} • {b.chargingPowerKw || b.chargingPower || 50} kW</span>
-                  </div>
-
-                  <div>
-                    <span className="text-[10px] text-slate-500 block uppercase font-bold tracking-wider">
-                      {isCompleted ? "Actual Energy" : "Battery Target"}
+                    <span className="text-[10px] text-[var(--text-muted)] block uppercase font-bold tracking-wider">Connector</span>
+                    <span className="font-bold text-blue-600 dark:text-blue-400 mt-0.5 block font-mono">
+                      {b.connectorNumber || b.connector_number || b.connectorId || `Connector 01`}
                     </span>
-                    {isCompleted ? (
-                      <div>
-                        <span className="font-bold text-emerald-400 mt-0.5 block">{b.actualEnergyUsed || b.energyRequired || 29.1} kWh</span>
-                        <span className="text-slate-400 text-[11px]">{b.duration || "52 min"}</span>
-                      </div>
-                    ) : (
-                      <div>
-                        <span className="font-bold text-emerald-400 mt-0.5 block">{b.batteryStartPct || 20}% → {b.batteryTargetPct || 80}%</span>
-                        <span className="text-slate-400 text-[11px]">Est. {b.energyRequired || 30} kWh</span>
-                      </div>
-                    )}
+                    <span className="text-[var(--text-secondary)] text-[11px] font-mono">
+                      {b.connectorType || b.connector_type || "CCS2"} • {b.power || (b.powerKw ? `${b.powerKw} kW` : `${b.power_kw || 150} kW`)}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-[var(--text-muted)] block uppercase font-bold tracking-wider">
+                      {isCompleted ? "Energy Transfer" : "Battery SOC Target"}
+                    </span>
+                    <div>
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400 mt-0.5 block font-mono">
+                        {b.currentSoc ?? b.current_soc_percent ?? 60}% → {b.targetSoc ?? b.target_soc_percent ?? 80}%
+                      </span>
+                      <span className="text-[var(--text-secondary)] text-[11px] font-mono">
+                        Est. {b.energyRequiredKwh || b.estimatedGridEnergyKwh || b.energyRequired || 0} kWh (@ ₹{b.tariffPerKwh || b.tariffRate || 15}/kWh)
+                      </span>
+                    </div>
                   </div>
                 </div>
 
                 {/* Amount & Payment Info */}
                 <div className="flex items-center justify-between text-xs pt-1">
                   <div>
-                    <span className="text-slate-500 text-[11px] block">{isCompleted ? "Final Amount:" : "Estimated Amount:"}</span>
-                    <span className="font-mono font-extrabold text-white text-sm">
-                      ₹{parseFloat(b.finalAmount || b.amount || 450).toFixed(2)}
+                    <span className="text-[var(--text-muted)] text-[11px] block">{isCompleted ? "Final Amount:" : "Estimated Amount:"}</span>
+                    <span className="font-mono font-extrabold text-[var(--text-primary)] text-sm">
+                      ₹{parseFloat(b.finalAmount || b.amount || 0).toFixed(2)}
                     </span>
                   </div>
 
                   <div className="text-right">
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                       {b.paymentStatus || "PAID"}
                     </span>
                   </div>
                 </div>
 
                 {/* Action Buttons Based on Status */}
-                <div className="pt-2 border-t border-slate-800 flex flex-wrap items-center gap-2">
+                <div className="pt-2 border-t border-[var(--border-subtle)] flex flex-wrap items-center gap-2">
                   {isConfirmed && (
                     <>
                       <button
                         onClick={() => handleCheckIn(b)}
                         disabled={checkingInId === b.bookingId}
-                        className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition flex items-center gap-1.5 shadow-md shadow-amber-500/20"
+                        className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition flex items-center gap-1.5 shadow-md shadow-amber-500/20 cursor-pointer"
                       >
                         <ShieldCheck size={14} />
                         <span>{checkingInId === b.bookingId ? "Checking In..." : "CHECK IN NOW"}</span>
@@ -434,7 +435,7 @@ export default function MyBookings() {
 
                       <button
                         onClick={() => setSelectedQRBooking(b)}
-                        className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 text-xs font-bold transition flex items-center gap-1.5"
+                        className="px-3 py-2 rounded-xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] hover:border-blue-500/40 text-[var(--text-primary)] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
                       >
                         <QrCode size={14} /> View QR
                       </button>
@@ -442,7 +443,7 @@ export default function MyBookings() {
                       <button
                         onClick={() => handleCancelBooking(b.bookingId)}
                         disabled={cancellingId === b.bookingId}
-                        className="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold transition ml-auto"
+                        className="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-xs font-bold transition ml-auto cursor-pointer"
                       >
                         {cancellingId === b.bookingId ? "Cancelling..." : "Cancel"}
                       </button>
@@ -454,7 +455,7 @@ export default function MyBookings() {
                       <button
                         onClick={() => handleProceedToCharging(b)}
                         disabled={startingId === b.bookingId}
-                        className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs transition flex items-center gap-1.5 shadow-md shadow-emerald-500/20"
+                        className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs transition flex items-center gap-1.5 shadow-md shadow-emerald-500/20 cursor-pointer"
                       >
                         <Zap size={14} className="fill-current" />
                         <span>{startingId === b.bookingId ? "Starting..." : "PROCEED TO LIVE CHARGING"}</span>
@@ -462,7 +463,7 @@ export default function MyBookings() {
 
                       <button
                         onClick={() => setSelectedQRBooking(b)}
-                        className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 text-xs font-bold transition flex items-center gap-1.5"
+                        className="px-3 py-2 rounded-xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] hover:border-blue-500/40 text-[var(--text-primary)] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
                       >
                         <QrCode size={14} /> View QR
                       </button>
@@ -472,7 +473,7 @@ export default function MyBookings() {
                   {isActive && (
                     <button
                       onClick={() => navigate("/customer/live-charging")}
-                      className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/30"
+                      className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/30 cursor-pointer"
                     >
                       <Zap size={15} className="fill-current" /> VIEW LIVE CHARGING <ArrowRight size={14} />
                     </button>
@@ -482,13 +483,13 @@ export default function MyBookings() {
                     <div className="flex items-center gap-2 w-full">
                       <button
                         onClick={() => setSelectedInvoiceBooking(b)}
-                        className="flex-1 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 text-xs font-bold transition flex items-center justify-center gap-1.5"
+                        className="flex-1 py-2 rounded-xl bg-blue-600/10 hover:bg-blue-600/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <FileText size={14} /> VIEW INVOICE
                       </button>
                       <button
                         onClick={() => setSelectedInvoiceBooking(b)}
-                        className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 text-xs font-bold transition flex items-center gap-1.5"
+                        className="px-3 py-2 rounded-xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] hover:border-blue-500/40 text-[var(--text-primary)] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
                       >
                         <Download size={14} /> PDF
                       </button>
@@ -496,7 +497,7 @@ export default function MyBookings() {
                   )}
 
                   {isCancelled && (
-                    <div className="text-[11px] text-slate-400 italic">
+                    <div className="text-[11px] text-[var(--text-secondary)] italic">
                       {st === "NO_SHOW"
                         ? "Slot released due to no-show past arrival window."
                         : "Reservation cancelled. Payment refunded to original payment method."}

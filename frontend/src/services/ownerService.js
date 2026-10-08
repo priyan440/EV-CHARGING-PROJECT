@@ -54,6 +54,11 @@ export const updateOwnerCharger = async (chargerId, chargerData) => {
   return res.data;
 };
 
+export const deleteOwnerCharger = async (chargerId) => {
+  const res = await api.delete(`/owner/chargers/${chargerId}`);
+  return res.data;
+};
+
 export const setChargerSimulatorState = async (chargerId, simulatorData) => {
   const res = await api.post(`/owner/chargers/${chargerId}/simulator`, simulatorData);
   return res.data;
@@ -116,6 +121,11 @@ export const updateOwnerTariff = async (tariffId, tariffData) => {
   return res.data;
 };
 
+export const deleteOwnerTariff = async (tariffId) => {
+  const res = await api.delete(`/owner/tariffs/${tariffId}`);
+  return res.data;
+};
+
 // 8. Payments & Revenue
 export const getOwnerTransactions = async () => {
   const res = await api.get("/owner/payments/transactions");
@@ -161,6 +171,11 @@ export const getOwnerFaults = async () => {
 export const resolveOwnerFault = async (faultId, notes = "") => {
   const res = await api.put(`/owner/faults/${faultId}/resolve`, { notes });
   return res.data;
+};
+
+export const getOwnerTechnicians = async () => {
+  const res = await api.get("/owner/technicians");
+  return res.data?.data || res.data || [];
 };
 
 // 10. Smart Load Management
@@ -223,6 +238,7 @@ export default {
   getOwnerChargers,
   createOwnerCharger,
   updateOwnerCharger,
+  deleteOwnerCharger,
   setChargerSimulatorState,
   getOwnerBookings,
   updateBookingStatus,
@@ -234,6 +250,7 @@ export default {
   getOwnerTariffs,
   createOwnerTariff,
   updateOwnerTariff,
+  deleteOwnerTariff,
   getOwnerTransactions,
   getOwnerRevenueSummary,
   createPaymentOrder,
@@ -243,6 +260,7 @@ export default {
   updateMaintenanceTicket,
   getOwnerFaults,
   resolveOwnerFault,
+  getOwnerTechnicians,
   getStationLoadProfile,
   updateSmartLoadCapacity,
   getOwnerAnalytics,

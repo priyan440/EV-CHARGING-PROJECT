@@ -51,11 +51,11 @@ export default function LiveCharging() {
       const res = await getActiveChargingSession();
       if (res?.active && res.session) {
         setActiveSession(res.session);
-        setBatteryLevel(res.session.batterySoc || res.session.currentBattery || 20);
+        setBatteryLevel(res.session.batterySoc ?? res.session.currentBattery ?? res.session.startSoc ?? 50);
         setEnergyDelivered(parseFloat(res.session.energyKwh || res.session.energyDelivered) || 0);
         setCurrentCost(parseFloat(res.session.totalAmount || res.session.currentCost) || 0);
         setElapsedMinutes(res.session.durationMinutes || 0);
-        setChargingPower(parseFloat(res.session.powerKw || res.session.chargingPower) || 50);
+        setChargingPower(parseFloat(res.session.powerKw || res.session.chargingPower) || 60);
       } else {
         setActiveSession(null);
       }
@@ -164,7 +164,7 @@ export default function LiveCharging() {
   };
 
   // Remaining minutes estimation
-  const targetBat = activeSession?.targetBattery || 80;
+  const targetBat = activeSession?.targetBattery || activeSession?.targetSoc || 100;
   const remainingPercent = Math.max(0, targetBat - batteryLevel);
   const remainingMins = Math.max(1, Math.round((remainingPercent / 60) * 45));
 

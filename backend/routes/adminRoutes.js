@@ -43,6 +43,7 @@ import {
   deleteMaintenanceAdmin,
   getAuditLogsAdmin,
   getReports,
+  getDynamicSlotAnalytics,
   updateUserRole,
   getPendingNetworks,
   approveNetwork,
@@ -56,10 +57,12 @@ const router = express.Router();
 // All admin routes require authentication and ADMIN role
 router.use(authenticate, authorizeRoles("ADMIN"));
 
-// 1. Dashboard Statistics
+// 1. Dashboard Statistics & Dynamic Slot Analytics
 router.get("/dashboard", getStats);
 router.get("/stats", getStats);
 router.get("/reports", getReports);
+router.get("/slot-analytics", getDynamicSlotAnalytics);
+router.get("/dynamic-analytics", getDynamicSlotAnalytics);
 
 // 2. Customer Management (CRUD)
 router.get("/customers", getAllCustomers);

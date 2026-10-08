@@ -789,7 +789,7 @@ export default function Login() {
                   <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
                   <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
                 </svg>
-                <span>Instant Google Sign-In: <strong className="text-emerald-600 dark:text-emerald-400 font-mono">priyanmahesh09@gmail.com</strong></span>
+                <span>Instant Google Sign-In</span>
               </button>
             </div>
           )}
@@ -807,108 +807,6 @@ export default function Login() {
           >
             Register Account <ArrowRight size={12} />
           </Link>
-        </div>
-
-        {/* Quick Demo Credentials with 1-Click Dual Login Testing */}
-        <div className="p-3.5 bg-slate-50 dark:bg-slate-900/80 rounded-2xl border border-slate-200 dark:border-slate-800 text-[10px] space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-              <ShieldCheck size={14} className="text-emerald-500 dark:text-emerald-400" /> Test Dual Login (Counter ID or Email)
-            </div>
-            <span className="text-[9px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 font-bold">
-              ⚡ LIVE MYSQL
-            </span>
-          </div>
-
-          <div className="space-y-1.5 pt-1">
-            <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
-              <span className="font-bold text-emerald-600 dark:text-emerald-400">Customer:</span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => { setAuthMode("PASSWORD"); setIdentifier("CUS0001"); setPassword("password123"); }}
-                  className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-300 border border-slate-200 dark:border-slate-700 font-mono text-[10px] transition cursor-pointer font-bold"
-                  title="Fill Counter ID: CUS0001"
-                >
-                  ID: CUS0001
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setAuthMode("PASSWORD"); setIdentifier("priyan@evcharge.com"); setPassword("password123"); }}
-                  className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-300 border border-slate-200 dark:border-slate-700 text-[10px] transition cursor-pointer font-bold"
-                  title="Fill Email: priyan@evcharge.com"
-                >
-                  priyan@evcharge.com
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
-              <span className="font-bold text-cyan-600 dark:text-cyan-400">Owner:</span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => { setAuthMode("PASSWORD"); setIdentifier("OWNER0001"); setPassword("ownerpassword"); }}
-                  className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-cyan-50 dark:hover:bg-cyan-500/20 text-slate-700 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-300 border border-slate-200 dark:border-slate-700 font-mono text-[10px] transition cursor-pointer font-bold"
-                  title="Fill Counter ID: OWNER0001"
-                >
-                  ID: OWNER0001
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setAuthMode("PASSWORD"); setIdentifier("senthil@greencharge.com"); setPassword("ownerpassword"); }}
-                  className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-cyan-50 dark:hover:bg-cyan-500/20 text-slate-700 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-300 border border-slate-200 dark:border-slate-700 text-[10px] transition cursor-pointer font-bold"
-                  title="Fill Email: senthil@greencharge.com"
-                >
-                  senthil@greencharge.com
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
-              <span className="font-bold text-amber-600 dark:text-amber-400">Technician:</span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => { setAuthMode("PASSWORD"); setIdentifier("TECH0001"); setPassword("password123"); }}
-                  className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-500/20 text-slate-700 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-300 border border-slate-200 dark:border-slate-700 font-mono text-[10px] transition cursor-pointer font-bold"
-                  title="Fill Counter ID: TECH0001"
-                >
-                  ID: TECH0001
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setAuthMode("PASSWORD"); setIdentifier("tech@evcharge.com"); setPassword("password123"); }}
-                  className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-500/20 text-slate-700 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-300 border border-slate-200 dark:border-slate-700 text-[10px] transition cursor-pointer font-bold"
-                  title="Fill Email: tech@evcharge.com"
-                >
-                  tech@evcharge.com
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
-              <span className="font-bold text-purple-600 dark:text-purple-400">Admin:</span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => { setAuthMode("PASSWORD"); setIdentifier("ADM0001"); setPassword("admin123"); }}
-                  className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-500/20 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-300 border border-slate-200 dark:border-slate-700 font-mono text-[10px] transition cursor-pointer font-bold"
-                  title="Fill Counter ID: ADM0001"
-                >
-                  ID: ADM0001
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setAuthMode("PASSWORD"); setIdentifier("admin@evcharge.com"); setPassword("admin123"); }}
-                  className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-500/20 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-300 border border-slate-200 dark:border-slate-700 text-[10px] transition cursor-pointer font-bold"
-                  title="Fill Email: admin@evcharge.com"
-                >
-                  admin@evcharge.com
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
       </motion.div>
 

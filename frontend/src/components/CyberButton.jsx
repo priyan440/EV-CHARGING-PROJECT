@@ -21,7 +21,7 @@ const CyberButton = ({
       case 'danger':
         return 'bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md border-0';
       case 'glass':
-        return 'bg-white border border-slate-300 text-slate-800 hover:bg-slate-50 font-bold shadow-xs';
+        return 'bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--text-primary)] hover:bg-[var(--bg-surface-raised)] font-bold shadow-xs';
       default:
         return 'bg-blue-600 text-white font-bold';
     }

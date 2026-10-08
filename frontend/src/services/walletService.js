@@ -24,9 +24,18 @@ export const walletService = {
   },
 
   // Pay for booking via EV Customer Wallet (atomically decrements MySQL balance and inserts payment)
-  payWithWallet: async (paymentData) => {
+  payWithWallet: async (paymentData, maybeAmount, maybeDesc) => {
     try {
-      const res = await api.post("/wallet/pay", paymentData);
+      let payload = paymentData;
+      if (typeof paymentData !== "object" || paymentData === null) {
+        payload = {
+          bookingId: paymentData,
+          booking_id: paymentData,
+          amount: maybeAmount,
+          description: maybeDesc || "Payment via EV Customer Wallet",
+        };
+      }
+      const res = await api.post("/wallet/pay", payload);
       return res.data;
     } catch (err) {
       console.error("payWithWallet error:", err);

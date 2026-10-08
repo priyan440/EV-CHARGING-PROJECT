@@ -208,6 +208,19 @@ export const bookingService = {
     }
   },
 
+  // Full multi-charger dynamic timeline for station & date
+  getStationTimeline: async (params) => {
+    try {
+      const res = await api.get("/slots/station-timeline", { params });
+      return res.data;
+    } catch (err) {
+      return {
+        success: false,
+        message: err.response?.data?.message || err.message || "Failed to fetch station timeline",
+      };
+    }
+  },
+
   // Earliest available valid interval for user's estimated duration
   getEarliestSlot: async (params) => {
     try {

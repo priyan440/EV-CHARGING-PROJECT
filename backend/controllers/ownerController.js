@@ -8,6 +8,7 @@ import {
   emitPaymentUpdated,
   emitMaintenanceUpdated,
   emitTelemetryUpdated,
+  emitStationUpdated,
 } from "../services/socketService.js";
 import { formatBooking } from "./bookingController.js";
 
@@ -22,21 +23,29 @@ const getOwnerId = (req) => {
 };
 
 // Helper: Generate next sequential ID safely from MySQL table
-const getNextId = async (prefix, table, column) => {
+const getNextId = async (prefix, table, column, usedSet = null) => {
   try {
-    const rows = await query(`SELECT ${column} as idVal FROM \`${table}\` ORDER BY id DESC LIMIT 1`);
+    const rows = await query(`SELECT \`${column}\` as idVal FROM \`${table}\` WHERE \`${column}\` LIKE ? ORDER BY \`${column}\` DESC LIMIT 1`, [`${prefix}%`]);
     let nextNum = 1;
     if (rows && rows.length > 0 && rows[0].idVal) {
-      const match = String(rows[0].idVal).match(new RegExp(`^${prefix}(\\d+)$`));
+      const match = String(rows[0].idVal).match(new RegExp(`^${prefix}(\\d+)`));
       if (match) {
         nextNum = parseInt(match[1], 10) + 1;
-      } else {
-        nextNum = rows.length + 1;
       }
     }
-    return `${prefix}${String(nextNum).padStart(6, "0")}`;
+    let candidate = `${prefix}${String(nextNum).padStart(6, "0")}`;
+    let exists = await query(`SELECT id FROM \`${table}\` WHERE \`${column}\` = ? LIMIT 1`, [candidate]);
+    while ((exists && exists.length > 0) || (usedSet && usedSet.has(candidate))) {
+      nextNum++;
+      candidate = `${prefix}${String(nextNum).padStart(6, "0")}`;
+      exists = await query(`SELECT id FROM \`${table}\` WHERE \`${column}\` = ? LIMIT 1`, [candidate]);
+    }
+    if (usedSet) usedSet.add(candidate);
+    return candidate;
   } catch {
-    return `${prefix}${Date.now().toString().slice(-6)}`;
+    const fallback = `${prefix}${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`;
+    if (usedSet) usedSet.add(fallback);
+    return fallback;
   }
 };
 
@@ -304,7 +313,9 @@ export const createOwnerStation = async (req, res) => {
       amenities = ["WiFi", "Restrooms", "Cafe", "Covered Parking"],
     } = req.body;
 
-    const station_id = await getNextId("STN", "stations", "station_id");
+    const usedIds = new Set();
+    const station_id = await getNextId("STN", "stations", "station_id", usedIds);
+    const default_tariff_id = await getNextId("TAR", "tariffs", "tariff_id", usedIds);
     const sName = stationName || name || "New EV Charging Station";
     const cleanSlots = parseInt(totalSlots || parkingCapacity, 10) || 4;
     const cleanPower = parseFloat(maxPowerKw || maxPower) || 150.0;
@@ -340,16 +351,15 @@ export const createOwnerStation = async (req, res) => {
       insertedStationId = stationResult.insertId;
 
       // 2. Insert Default Tariff for this station
-      const tariff_id = `TAR${String(insertedStationId).padStart(6, "0")}`;
       await connection.execute(
         `INSERT INTO tariffs (tariff_id, station_id, base_rate_per_kwh, peak_rate_per_kwh, off_peak_rate_per_kwh, connection_fee, idle_fee_per_minute, peak_start, peak_end, status)
          VALUES (?, ?, 18.00, 22.00, 14.00, 15.00, 2.00, '18:00', '22:00', 'ACTIVE')`,
-        [tariff_id, insertedStationId]
+        [default_tariff_id, insertedStationId]
       );
 
       // 3. Create default chargers and connectors
       for (let i = 1; i <= Math.min(6, cleanSlots); i++) {
-        const charger_id = `CHG${String(insertedStationId).padStart(3, "0")}${String(i).padStart(3, "0")}`;
+        const charger_id = await getNextId("CHG", "chargers", "charger_id", usedIds);
         const [chgResult] = await connection.execute(
           `INSERT INTO chargers (charger_id, station_id, charger_name, charger_type, power_kw, status, connector_count)
            VALUES (?, ?, ?, 'DC_FAST', 60.00, 'AVAILABLE', 1)`,
@@ -357,7 +367,7 @@ export const createOwnerStation = async (req, res) => {
         );
         const chargerNumericId = chgResult.insertId;
 
-        const connector_id = `CON${String(chargerNumericId).padStart(6, "0")}`;
+        const connector_id = await getNextId("CON", "charger_connectors", "connector_id", usedIds);
         await connection.execute(
           `INSERT INTO charger_connectors (connector_id, charger_id, connector_type, power_kw, status)
            VALUES (?, ?, 'CCS2', 60.00, 'AVAILABLE')`,
@@ -379,11 +389,44 @@ export const updateOwnerStation = async (req, res) => {
   try {
     const ownerId = getOwnerId(req);
     const { stationId } = req.params;
-    const { stationName, name, address, city, state, pincode, status, totalSlots, parkingCapacity, maxPowerKw, maxPower, openingTime, closingTime, contactNumber } = req.body;
+    const {
+      stationName,
+      name,
+      address,
+      city,
+      state,
+      pincode,
+      latitude,
+      longitude,
+      status,
+      totalSlots,
+      parkingCapacity,
+      maxPowerKw,
+      maxPower,
+      openingTime,
+      closingTime,
+      contactNumber,
+      chargingRatePerKwh,
+      amenities,
+    } = req.body;
 
-    const sName = stationName || name;
-    const slots = totalSlots || parkingCapacity;
-    const power = maxPowerKw || maxPower;
+    const sName = stationName || name || null;
+    const cleanAddress = address || null;
+    const cleanCity = city || null;
+    const cleanState = state || null;
+    const cleanPincode = pincode || null;
+    const slots = totalSlots || parkingCapacity ? parseInt(totalSlots || parkingCapacity, 10) : null;
+    const power = maxPowerKw || maxPower ? parseFloat(maxPowerKw || maxPower) : null;
+    const cleanLat = latitude !== undefined && latitude !== null && !isNaN(parseFloat(latitude)) ? parseFloat(latitude) : null;
+    const cleanLng = longitude !== undefined && longitude !== null && !isNaN(parseFloat(longitude)) ? parseFloat(longitude) : null;
+    const cleanStatus = status || null;
+    const cleanOpen = openingTime || null;
+    const cleanClose = closingTime || null;
+    const cleanContact = contactNumber || null;
+    const amenitiesJson = amenities ? (typeof amenities === "string" ? amenities : JSON.stringify(amenities)) : null;
+
+    const isNum = /^\d+$/.test(String(stationId));
+    const numericStationId = isNum ? parseInt(stationId, 10) : 0;
 
     await query(
       `UPDATE stations SET 
@@ -392,18 +435,60 @@ export const updateOwnerStation = async (req, res) => {
          city = COALESCE(?, city),
          state = COALESCE(?, state),
          pincode = COALESCE(?, pincode),
+         latitude = COALESCE(?, latitude),
+         longitude = COALESCE(?, longitude),
          status = COALESCE(?, status),
          total_slots = COALESCE(?, total_slots),
          max_power = COALESCE(?, max_power),
          opening_time = COALESCE(?, opening_time),
          closing_time = COALESCE(?, closing_time),
-         contact_number = COALESCE(?, contact_number)
+         contact_number = COALESCE(?, contact_number),
+         amenities = COALESCE(?, amenities)
        WHERE (station_id = ? OR id = ?) AND owner_id = ?`,
-      [sName, address, city, state, pincode, status, slots, power, openingTime, closingTime, contactNumber, stationId, parseInt(stationId, 10) || 0, ownerId]
+      [
+        sName,
+        cleanAddress,
+        cleanCity,
+        cleanState,
+        cleanPincode,
+        cleanLat,
+        cleanLng,
+        cleanStatus,
+        slots,
+        power,
+        cleanOpen,
+        cleanClose,
+        cleanContact,
+        amenitiesJson,
+        String(stationId),
+        numericStationId,
+        ownerId,
+      ]
     );
 
-    const rows = await query(`SELECT * FROM stations WHERE (station_id = ? OR id = ?) AND owner_id = ?`, [stationId, parseInt(stationId, 10) || 0, ownerId]);
+    // Update Tariff if rate specified
+    if (chargingRatePerKwh) {
+      const parsedRate = parseFloat(chargingRatePerKwh);
+      if (!isNaN(parsedRate)) {
+        await query(
+          `UPDATE tariffs SET base_rate_per_kwh = ?, peak_rate_per_kwh = ?, off_peak_rate_per_kwh = ? WHERE station_id IN (SELECT id FROM stations WHERE station_id = ? OR id = ?)`,
+          [parsedRate, parsedRate + 4.0, Math.max(10, parsedRate - 4.0), String(stationId), numericStationId]
+        );
+      }
+    }
+
+    const rows = await query(
+      `SELECT * FROM stations WHERE (station_id = ? OR id = ?) AND owner_id = ?`,
+      [String(stationId), numericStationId, ownerId]
+    );
     const updated = rows[0];
+
+    try {
+      emitStationUpdated(updated);
+    } catch (sockErr) {
+      console.warn("Socket broadcast error:", sockErr.message);
+    }
+
     res.json({ success: true, message: "Station updated successfully in MySQL", data: updated });
   } catch (error) {
     console.error("updateOwnerStation error:", error);
@@ -470,7 +555,7 @@ export const getOwnerChargers = async (req, res) => {
 export const createOwnerCharger = async (req, res) => {
   try {
     const ownerId = getOwnerId(req);
-    const { stationId, chargerName, chargerType = "DC_FAST", powerKw = 60.0 } = req.body;
+    const { stationId, chargerName, name, chargerType = "DC_FAST", powerKw = 60.0, powerRating, connectorType = "CCS2" } = req.body;
 
     // Resolve station
     const stations = await query(`SELECT id FROM stations WHERE (station_id = ? OR id = ?) AND owner_id = ?`, [stationId, parseInt(stationId, 10) || 0, ownerId]);
@@ -479,29 +564,33 @@ export const createOwnerCharger = async (req, res) => {
     }
     const targetStationId = stations[0].id;
     const charger_id = await getNextId("CHG", "chargers", "charger_id");
+    const cName = chargerName || name || `Bay (${connectorType} ${powerKw || powerRating || 60}kW)`;
+    const cleanPower = parseFloat(powerKw || powerRating) || 60.0;
+    const cleanType = chargerType || (connectorType === "Type 2" ? "AC" : "DC_FAST");
 
     let createdCharger = null;
     await transaction(async (connection) => {
       const [chgResult] = await connection.execute(
         `INSERT INTO chargers (charger_id, station_id, charger_name, charger_type, power_kw, status, connector_count)
          VALUES (?, ?, ?, ?, ?, 'AVAILABLE', 1)`,
-        [charger_id, targetStationId, chargerName || `Charger ${charger_id}`, chargerType, parseFloat(powerKw) || 60.0]
+        [charger_id, targetStationId, cName, cleanType, cleanPower]
       );
       const chgId = chgResult.insertId;
 
       const connector_id = `CON${String(chgId).padStart(6, "0")}`;
       await connection.execute(
         `INSERT INTO charger_connectors (connector_id, charger_id, connector_type, power_kw, status)
-         VALUES (?, ?, 'CCS2', ?, 'AVAILABLE')`,
-        [connector_id, chgId, parseFloat(powerKw) || 60.0]
+         VALUES (?, ?, ?, ?, 'AVAILABLE')`,
+        [connector_id, chgId, connectorType, cleanPower]
       );
     });
 
     const rows = await query(`SELECT * FROM chargers WHERE charger_id = ?`, [charger_id]);
     createdCharger = rows[0];
     if (createdCharger) emitChargerStatusChanged(createdCharger);
-    res.status(201).json({ success: true, message: "Charger created successfully", data: createdCharger });
+    res.status(201).json({ success: true, message: "Charger created successfully in MySQL", data: createdCharger });
   } catch (error) {
+    console.error("createOwnerCharger error:", error);
     res.status(500).json({ success: false, message: "Failed to create charger", error: error.message });
   }
 };
@@ -509,7 +598,10 @@ export const createOwnerCharger = async (req, res) => {
 export const updateOwnerCharger = async (req, res) => {
   try {
     const { chargerId } = req.params;
-    const { chargerName, chargerType, powerKw, status } = req.body;
+    const { chargerName, name, chargerType, powerKw, powerRating, status, connectorType } = req.body;
+
+    const cName = chargerName || name;
+    const cleanPower = powerKw || powerRating ? parseFloat(powerKw || powerRating) : null;
 
     await query(
       `UPDATE chargers SET 
@@ -518,15 +610,53 @@ export const updateOwnerCharger = async (req, res) => {
          power_kw = COALESCE(?, power_kw),
          status = COALESCE(?, status)
        WHERE charger_id = ? OR id = ?`,
-      [chargerName, chargerType, powerKw, status, chargerId, parseInt(chargerId, 10) || 0]
+      [cName, chargerType, cleanPower, status, chargerId, parseInt(chargerId, 10) || 0]
     );
+
+    if (connectorType || cleanPower || status) {
+      await query(
+        `UPDATE charger_connectors SET 
+           connector_type = COALESCE(?, connector_type),
+           power_kw = COALESCE(?, power_kw),
+           status = COALESCE(?, status)
+         WHERE charger_id IN (SELECT id FROM chargers WHERE charger_id = ? OR id = ?)`,
+        [connectorType, cleanPower, status, chargerId, parseInt(chargerId, 10) || 0]
+      );
+    }
 
     const rows = await query(`SELECT * FROM chargers WHERE charger_id = ? OR id = ?`, [chargerId, parseInt(chargerId, 10) || 0]);
     const updated = rows[0];
     if (updated) emitChargerStatusChanged(updated);
-    res.json({ success: true, message: "Charger updated successfully", data: updated });
+    res.json({ success: true, message: "Charger updated successfully in MySQL", data: updated });
   } catch (error) {
+    console.error("updateOwnerCharger error:", error);
     res.status(500).json({ success: false, message: "Failed to update charger", error: error.message });
+  }
+};
+
+export const deleteOwnerCharger = async (req, res) => {
+  try {
+    const ownerId = getOwnerId(req);
+    const admin = isAdmin(req);
+    const { chargerId } = req.params;
+    const isNum = /^\d+$/.test(chargerId);
+
+    const chgRows = await query(
+      `SELECT c.id, c.station_id FROM chargers c JOIN stations s ON c.station_id = s.id WHERE (c.charger_id = ? OR c.id = ?) ${admin ? "" : "AND s.owner_id = ?"}`,
+      admin ? [chargerId, isNum ? parseInt(chargerId, 10) : 0] : [chargerId, isNum ? parseInt(chargerId, 10) : 0, ownerId]
+    );
+
+    if (chgRows.length === 0) {
+      return res.status(404).json({ success: false, message: "Charger not found or unauthorized." });
+    }
+
+    await query(`UPDATE chargers SET status = 'OFFLINE' WHERE id = ?`, [chgRows[0].id]);
+    await query(`UPDATE charger_connectors SET status = 'OFFLINE' WHERE charger_id = ?`, [chgRows[0].id]);
+
+    res.json({ success: true, message: "Charger marked OFFLINE successfully in MySQL." });
+  } catch (error) {
+    console.error("deleteOwnerCharger error:", error);
+    res.status(500).json({ success: false, message: "Failed to delete charger", error: error.message });
   }
 };
 
@@ -919,9 +1049,33 @@ export const updateOwnerTariff = async (req, res) => {
     );
 
     const rows = await query(`SELECT * FROM tariffs WHERE tariff_id = ? OR id = ?`, [tariffId, parseInt(tariffId, 10) || 0]);
-    res.json({ success: true, message: "Tariff updated successfully", data: rows[0] });
+    res.json({ success: true, message: "Tariff updated successfully in MySQL", data: rows[0] });
   } catch (error) {
     res.status(500).json({ success: false, message: "Failed to update tariff", error: error.message });
+  }
+};
+
+export const deleteOwnerTariff = async (req, res) => {
+  try {
+    const ownerId = getOwnerId(req);
+    const admin = isAdmin(req);
+    const { tariffId } = req.params;
+    const isNum = /^\d+$/.test(tariffId);
+
+    const tariffRows = await query(
+      `SELECT t.id, t.station_id FROM tariffs t JOIN stations s ON t.station_id = s.id WHERE (t.tariff_id = ? OR t.id = ?) ${admin ? "" : "AND s.owner_id = ?"}`,
+      admin ? [tariffId, isNum ? parseInt(tariffId, 10) : 0] : [tariffId, isNum ? parseInt(tariffId, 10) : 0, ownerId]
+    );
+
+    if (tariffRows.length === 0) {
+      return res.status(404).json({ success: false, message: "Tariff not found or unauthorized." });
+    }
+
+    await query(`UPDATE tariffs SET status = 'INACTIVE' WHERE id = ?`, [tariffRows[0].id]);
+    res.json({ success: true, message: "Tariff deactivated successfully in MySQL (historical booking invoices preserved)." });
+  } catch (error) {
+    console.error("deleteOwnerTariff error:", error);
+    res.status(500).json({ success: false, message: "Failed to deactivate tariff", error: error.message });
   }
 };
 
@@ -1179,25 +1333,56 @@ export const createMaintenanceTicket = async (req, res) => {
     }
     const targetStationId = mStationRows[0].id;
 
+    let resolvedChargerId = null;
+    if (chargerId) {
+      const isNum = /^\d+$/.test(String(chargerId));
+      const numId = isNum ? parseInt(chargerId, 10) : 0;
+      const chgRows = await query(`SELECT id FROM chargers WHERE id = ? OR charger_id = ?`, [numId, String(chargerId)]);
+      if (chgRows.length > 0) {
+        resolvedChargerId = chgRows[0].id;
+      }
+    }
+
+    let resolvedTechId = null;
+    if (technicianId) {
+      const isNum = /^\d+$/.test(String(technicianId));
+      const numId = isNum ? parseInt(technicianId, 10) : 0;
+      const techRows = await query(`SELECT id FROM users WHERE id = ? OR user_id = ?`, [numId, String(technicianId)]);
+      if (techRows.length > 0) {
+        resolvedTechId = techRows[0].id;
+      }
+    }
+
+    const initialStatus = resolvedTechId ? "ASSIGNED" : "OPEN";
+
     await transaction(async (connection) => {
       await connection.execute(
         `INSERT INTO maintenance_tickets (ticket_id, station_id, charger_id, technician_id, issue_type, description, priority, status, opened_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', NOW())`,
-        [ticket_id, targetStationId, chargerId || null, technicianId || null, issueType || "Hardware Fault", description || "Ticket logged from Owner Dashboard", priority]
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [ticket_id, targetStationId, resolvedChargerId, resolvedTechId, issueType || "Hardware Fault", description || "Ticket logged from Owner Dashboard", priority, initialStatus]
       );
 
-      if (chargerId) {
-        await connection.execute(`UPDATE chargers SET status = 'MAINTENANCE' WHERE id = ? OR charger_id = ?`, [chargerId, chargerId]);
+      if (resolvedChargerId) {
+        await connection.execute(`UPDATE chargers SET status = 'MAINTENANCE' WHERE id = ?`, [resolvedChargerId]);
       }
     });
 
-    const rows = await query(`SELECT * FROM maintenance_tickets WHERE ticket_id = ?`, [ticket_id]);
+    const rows = await query(
+      `SELECT mt.*, t.name as technician_name, t.phone as technician_phone, s.station_name, c.charger_name
+       FROM maintenance_tickets mt
+       JOIN stations s ON mt.station_id = s.id
+       LEFT JOIN users t ON mt.technician_id = t.id
+       LEFT JOIN chargers c ON mt.charger_id = c.id
+       WHERE mt.ticket_id = ?`,
+      [ticket_id]
+    );
     const created = rows[0];
     if (created) emitMaintenanceUpdated(created);
-    if (chargerId) emitChargerStatusChanged({ chargerId, status: "MAINTENANCE" });
+    if (resolvedChargerId) emitChargerStatusChanged({ chargerId: resolvedChargerId, status: "MAINTENANCE" });
 
     res.status(201).json({ success: true, message: "Maintenance ticket created", data: created });
   } catch (error) {
+    console.error("createMaintenanceTicket error:", error);
     res.status(500).json({ success: false, message: "Failed to create maintenance ticket", error: error.message });
   }
 };
@@ -1207,11 +1392,29 @@ export const updateMaintenanceTicket = async (req, res) => {
     const { ticketId } = req.params;
     const { status, priority, technicianId, resolutionNotes } = req.body;
 
-    const ticketRows = await query(`SELECT * FROM maintenance_tickets WHERE ticket_id = ? OR id = ?`, [ticketId, parseInt(ticketId, 10) || 0]);
+    const isNum = /^\d+$/.test(String(ticketId));
+    const numTicketId = isNum ? parseInt(ticketId, 10) : 0;
+    const ticketRows = await query(`SELECT * FROM maintenance_tickets WHERE ticket_id = ? OR id = ?`, [String(ticketId), numTicketId]);
     if (!ticketRows || ticketRows.length === 0) return res.status(404).json({ success: false, message: "Ticket not found" });
 
     const ticket = ticketRows[0];
     const isResolved = status === "RESOLVED" || status === "CLOSED";
+
+    let resolvedTechId = undefined;
+    if (technicianId !== undefined) {
+      if (!technicianId) {
+        resolvedTechId = null;
+      } else {
+        const isTechNum = /^\d+$/.test(String(technicianId));
+        const numTId = isTechNum ? parseInt(technicianId, 10) : 0;
+        const techRows = await query(`SELECT id FROM users WHERE id = ? OR user_id = ?`, [numTId, String(technicianId)]);
+        if (techRows.length > 0) {
+          resolvedTechId = techRows[0].id;
+        } else {
+          resolvedTechId = null;
+        }
+      }
+    }
 
     await transaction(async (connection) => {
       await connection.execute(
@@ -1223,7 +1426,7 @@ export const updateMaintenanceTicket = async (req, res) => {
            resolved_at = CASE WHEN ? THEN NOW() ELSE resolved_at END,
            updated_at = NOW()
          WHERE id = ?`,
-        [status, priority, technicianId, resolutionNotes, isResolved, ticket.id]
+        [status || null, priority || null, resolvedTechId !== undefined ? resolvedTechId : null, resolutionNotes || null, isResolved, ticket.id]
       );
 
       if (isResolved && ticket.charger_id) {
@@ -1231,19 +1434,43 @@ export const updateMaintenanceTicket = async (req, res) => {
       }
     });
 
-    const rows = await query(`SELECT * FROM maintenance_tickets WHERE id = ?`, [ticket.id]);
+    const rows = await query(
+      `SELECT mt.*, t.name as technician_name, t.phone as technician_phone, s.station_name, c.charger_name
+       FROM maintenance_tickets mt
+       JOIN stations s ON mt.station_id = s.id
+       LEFT JOIN users t ON mt.technician_id = t.id
+       LEFT JOIN chargers c ON mt.charger_id = c.id
+       WHERE mt.id = ?`,
+      [ticket.id]
+    );
     const updated = rows[0];
     if (updated) emitMaintenanceUpdated(updated);
     if (isResolved && ticket.charger_id) emitChargerStatusChanged({ chargerId: ticket.charger_id, status: "AVAILABLE" });
 
     res.json({ success: true, message: `Ticket updated to ${status}`, data: updated });
   } catch (error) {
+    console.error("updateMaintenanceTicket error:", error);
     res.status(500).json({ success: false, message: "Failed to update maintenance ticket", error: error.message });
   }
 };
 
 export const getOwnerFaults = async (req, res) => res.json({ success: true, data: [] });
 export const resolveOwnerFault = async (req, res) => res.json({ success: true, message: "Fault resolved" });
+
+export const getOwnerTechnicians = async (req, res) => {
+  try {
+    const techs = await query(
+      `SELECT id, user_id, name, email, phone, status 
+       FROM users 
+       WHERE role IN ('TECHNICIAN', 'TECH') AND status = 'ACTIVE' 
+       ORDER BY name ASC`
+    );
+    res.json({ success: true, data: techs });
+  } catch (error) {
+    console.error("getOwnerTechnicians error:", error);
+    res.status(500).json({ success: false, message: "Error fetching technicians from MySQL", error: error.message });
+  }
+};
 
 /**
  * 10. NOTIFICATIONS, AUDIT LOGS, AI ASSISTANT, SETTINGS
@@ -1429,16 +1656,16 @@ export const getOwnerControlCenterSnapshot = async (req, res) => {
 
       const occupant = activeSession
         ? {
-            customerName: activeSession.customer_name || "EV Driver",
-            vehicleNumber: activeSession.vehicle_number || "TN01EV0001",
-            vehicleModel: activeSession.vehicle_model || "Tata Nexon EV",
-            startTime: activeSession.start_time,
-            soc: activeSession.battery_soc || 65,
-            targetSoc: 80,
-            energyKwh: activeSession.energy_kwh || 18.5,
-          }
+          customerName: activeSession.customer_name || "EV Driver",
+          vehicleNumber: activeSession.vehicle_number || "TN01EV0001",
+          vehicleModel: activeSession.vehicle_model || "Tata Nexon EV",
+          startTime: activeSession.start_time,
+          soc: activeSession.battery_soc || 65,
+          targetSoc: 80,
+          energyKwh: activeSession.energy_kwh || 18.5,
+        }
         : activeBooking || upcomingBooking
-        ? {
+          ? {
             bookingId: (activeBooking || upcomingBooking).bookingId,
             customerName: (activeBooking || upcomingBooking).customerName || "EV Driver",
             vehicleNumber: (activeBooking || upcomingBooking).vehicleNumber || "TN01EV0001",
@@ -1447,7 +1674,7 @@ export const getOwnerControlCenterSnapshot = async (req, res) => {
             endTime: (activeBooking || upcomingBooking).endTime,
             duration: (activeBooking || upcomingBooking).durationMinutes || 60,
           }
-        : null;
+          : null;
 
       return {
         id: c.id,
@@ -1464,13 +1691,13 @@ export const getOwnerControlCenterSnapshot = async (req, res) => {
         occupant,
         session: activeSession
           ? {
-              sessionId: activeSession.session_id,
-              currentSoc: activeSession.battery_soc || 65,
-              targetSoc: 80,
-              energyKwh: activeSession.energy_kwh || 18.5,
-              powerKw: activeSession.power_kw || 50.0,
-              durationMinutes: activeSession.duration_minutes || 25,
-            }
+            sessionId: activeSession.session_id,
+            currentSoc: activeSession.battery_soc || 65,
+            targetSoc: 80,
+            energyKwh: activeSession.energy_kwh || 18.5,
+            powerKw: activeSession.power_kw || 50.0,
+            durationMinutes: activeSession.duration_minutes || 25,
+          }
           : null,
         telemetry: {
           voltage: 400.0,

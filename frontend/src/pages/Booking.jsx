@@ -39,25 +39,45 @@ import { stationService } from "../services/stationService";
 import { bookingService } from "../services/bookingService";
 import { vehicleService } from "../services/vehicleService";
 
-const TIME_SLOTS = [
-  { time: "08:00", label: "08:00 AM (Morning)" },
-  { time: "09:00", label: "09:00 AM (Morning)" },
-  { time: "10:00", label: "10:00 AM (Standard)" },
-  { time: "11:00", label: "11:00 AM (Standard)" },
-  { time: "12:00", label: "12:00 PM (Standard)" },
-  { time: "13:00", label: "01:00 PM (Afternoon)" },
-  { time: "14:00", label: "02:00 PM (Standard)" },
-  { time: "15:00", label: "03:00 PM (Standard)" },
-  { time: "16:00", label: "04:00 PM (Afternoon)" },
-  { time: "17:00", label: "05:00 PM (Afternoon)" },
-  { time: "18:00", label: "06:00 PM (Peak Surge +25%)" },
-  { time: "19:00", label: "07:00 PM (Peak Surge +25%)" },
-  { time: "20:00", label: "08:00 PM (Peak Surge +25%)" },
-  { time: "21:00", label: "09:00 PM (Standard)" },
-  { time: "22:00", label: "10:00 PM (Off-Peak Saver -15%)" },
-];
+// Helper for local YYYY-MM-DD
+const getLocalDateStr = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+// Generate dynamic 15-minute interval time slots across 24 hours
+export const generateDynamicTimeSlots = () => {
+  const slots = [];
+  for (let m = 0; m < 1440; m += 15) {
+    const h = Math.floor(m / 60);
+    const min = m % 60;
+    const time24 = `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+    const ampm = h >= 12 ? "PM" : "AM";
+    const displayH = h % 12 === 0 ? 12 : h % 12;
+    const time12 = `${String(displayH).padStart(2, "0")}:${String(min).padStart(2, "0")} ${ampm}`;
+
+    let tag = "Standard";
+    if (h >= 6 && h < 11) tag = "Morning";
+    else if (h >= 11 && h < 17) tag = "Standard";
+    else if (h >= 17 && h < 21) tag = "Peak Surge +25%";
+    else tag = "Off-Peak Saver -15%";
+
+    slots.push({
+      time: time24,
+      label: `${time12} (${tag})`,
+      minutes: m,
+    });
+  }
+  return slots;
+};
+
+const TIME_SLOTS = generateDynamicTimeSlots();
 
 const DURATION_OPTIONS = [
+  { value: 0.25, label: "15 Minutes", minutes: 15 },
+  { value: 0.33, label: "20 Minutes", minutes: 20 },
   { value: 0.5, label: "30 Minutes", minutes: 30 },
   { value: 0.75, label: "45 Minutes", minutes: 45 },
   { value: 1, label: "1 Hour", minutes: 60 },
@@ -92,7 +112,7 @@ export default function Booking() {
   const [selectedStation, setSelectedStation] = useState(null);
 
   // Date, Time & Duration Configuration
-  const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(() => getLocalDateStr(new Date()));
   const [startTime, setStartTime] = useState("10:00");
   const [durationHours, setDurationHours] = useState(1);
   const [currentBattery, setCurrentBattery] = useState(60);
@@ -926,7 +946,7 @@ export default function Booking() {
               <input
                 type="date"
                 value={date}
-                min={new Date().toISOString().split("T")[0]}
+                min={getLocalDateStr(new Date())}
                 onChange={(e) => setDate(e.target.value)}
                 className="w-full p-3.5 rounded-2xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-blue-500 font-mono"
               />
@@ -942,11 +962,18 @@ export default function Booking() {
                 onChange={(e) => setStartTime(e.target.value)}
                 className="w-full p-3.5 rounded-2xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-blue-500 font-mono cursor-pointer"
               >
-                {TIME_SLOTS.map((s) => (
-                  <option key={s.time} value={s.time}>
-                    {s.label}
-                  </option>
-                ))}
+                {TIME_SLOTS.map((s) => {
+                  const now = new Date();
+                  const todayStr = getLocalDateStr(now);
+                  const isToday = date === todayStr;
+                  const currentMins = now.getHours() * 60 + now.getMinutes();
+                  const isPast = isToday && s.minutes < currentMins;
+                  return (
+                    <option key={s.time} value={s.time} disabled={isPast}>
+                      {s.label} {isPast ? "• (Past)" : ""}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 

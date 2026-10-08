@@ -22,6 +22,8 @@ const router = express.Router();
 // Available Connectors and Slot Bookings can be called with optional or standard authentication
 router.get("/available-connectors", optionalAuth, getAvailableConnectors);
 router.get("/slot-bookings", optionalAuth, getSlotBookings);
+router.get("/availability", optionalAuth, checkAvailability);
+router.post("/check", optionalAuth, checkAvailability);
 router.post("/check-availability", optionalAuth, checkAvailability);
 
 // All other booking routes require authentication
@@ -36,7 +38,7 @@ router.post("/offline", createOfflineBooking);
 router.get("/my-bookings", getCustomerBookings);
 router.get("/customer-bookings", getCustomerBookings);
 router.get("/owner-bookings", getOwnerBookings);
-router.get("/my", getBookings);
+router.get("/my", getCustomerBookings);
 router.get("/user/:userId", getUserBookings);
 
 // Generic / root & parameterized routes

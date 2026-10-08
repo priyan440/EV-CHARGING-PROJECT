@@ -20,10 +20,14 @@ import {
   Activity,
   ShieldAlert,
   Power,
+  Edit2,
+  Trash2,
 } from "lucide-react";
 import {
   getOwnerChargers,
   createOwnerCharger,
+  updateOwnerCharger,
+  deleteOwnerCharger,
   setChargerSimulatorState,
   getOwnerStations,
 } from "../../services/ownerService";
@@ -114,6 +118,8 @@ export default function OwnerChargers() {
     }
   }, [selectedStation]);
 
+  const [editingCharger, setEditingCharger] = useState(null);
+
   const handleCreateCharger = async (e) => {
     e.preventDefault();
     if (!formData.stationId) {
@@ -125,9 +131,10 @@ export default function OwnerChargers() {
     try {
       const res = await createOwnerCharger({
         stationId: formData.stationId,
-        chargerName: formData.name || `Charger ${formData.powerRating}kW`,
+        chargerName: formData.name || `Bay (${formData.connectorType} ${formData.powerRating}kW)`,
         chargerType: formData.chargerType,
         powerKw: Number(formData.powerRating),
+        connectorType: formData.connectorType,
       });
       showToast(`Charger added! ID: ${res.data?.charger_id || res.data?.chargerId || "CHG"}`);
       setShowAddModal(false);
@@ -146,6 +153,40 @@ export default function OwnerChargers() {
       showToast("Error creating charger: " + (err.message || "Failed"));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleUpdateChargerSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingCharger) return;
+
+    setSubmitting(true);
+    try {
+      await updateOwnerCharger(editingCharger.charger_id || editingCharger.id, {
+        chargerName: editingCharger.charger_name || editingCharger.name,
+        chargerType: editingCharger.charger_type,
+        powerKw: Number(editingCharger.power_kw || editingCharger.powerKw),
+        status: editingCharger.status,
+        connectorType: editingCharger.connector_type || editingCharger.connectorType,
+      });
+      showToast(`Charger ${editingCharger.charger_id || editingCharger.id} updated!`);
+      setEditingCharger(null);
+      loadData();
+    } catch (err) {
+      showToast("Error updating charger: " + (err.message || "Failed"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeactivateCharger = async (chargerId) => {
+    if (!window.confirm(`Are you sure you want to mark charger ${chargerId} as OFFLINE?`)) return;
+    try {
+      await deleteOwnerCharger(chargerId);
+      showToast(`Charger ${chargerId} marked OFFLINE.`);
+      loadData();
+    } catch (err) {
+      showToast("Error deactivating charger: " + (err.message || "Failed"));
     }
   };
 
@@ -361,18 +402,145 @@ export default function OwnerChargers() {
                   </div>
                 </div>
 
-                {/* Simulator Action Button */}
-                <div className="pt-2 border-t border-[var(--border-subtle)] flex gap-2">
+                {/* Action Buttons */}
+                <div className="pt-2 border-t border-[var(--border-subtle)] flex items-center gap-2">
                   <button
                     onClick={() => setSimulatorModalCharger(charger)}
                     className="flex-1 py-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
                   >
-                    <Sliders size={13} /> OCPP Simulator Controls
+                    <Sliders size={13} /> OCPP Controls
+                  </button>
+                  <button
+                    onClick={() => setEditingCharger({
+                      ...charger,
+                      powerRating: charger.power_kw || charger.powerKw || 60,
+                      connectorType: charger.connector_type || charger.connectorType || "CCS2",
+                    })}
+                    className="p-2 bg-[var(--bg-surface-raised)] hover:bg-[var(--bg-surface)] text-[var(--text-primary)] rounded-xl border border-[var(--border-subtle)] transition cursor-pointer"
+                    title="Edit Charger Configuration"
+                  >
+                    <Edit2 size={13} />
+                  </button>
+                  <button
+                    onClick={() => handleDeactivateCharger(charger.charger_id || charger.id)}
+                    className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl border border-rose-500/20 transition cursor-pointer"
+                    title="Mark Charger Offline"
+                  >
+                    <Power size={13} />
                   </button>
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Modal: Edit Existing Charger */}
+      {editingCharger && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] w-full max-w-lg rounded-3xl p-6 space-y-4 shadow-2xl animate-fade-in text-[var(--text-primary)]">
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
+              <h3 className="text-base font-bold text-[var(--text-primary)] flex items-center gap-2 font-mono">
+                <Edit2 size={18} className="text-blue-500" /> Edit Charger {editingCharger.charger_id || editingCharger.id} (MySQL)
+              </h3>
+              <button
+                onClick={() => setEditingCharger(null)}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 rounded-lg cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateChargerSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-[var(--text-muted)] block mb-1">Charger Name / Bay *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingCharger.charger_name || editingCharger.name || ""}
+                    onChange={(e) => setEditingCharger({ ...editingCharger, charger_name: e.target.value, name: e.target.value })}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs rounded-xl p-2.5"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-[var(--text-muted)] block mb-1">Max Power Output (kW) *</label>
+                  <input
+                    type="number"
+                    required
+                    value={editingCharger.power_kw || editingCharger.powerKw || 60}
+                    onChange={(e) => setEditingCharger({ ...editingCharger, power_kw: e.target.value, powerKw: e.target.value })}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs rounded-xl p-2.5 font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-[var(--text-muted)] block mb-1">Charger Type</label>
+                  <select
+                    value={editingCharger.charger_type || editingCharger.chargerType || "DC_FAST"}
+                    onChange={(e) => setEditingCharger({ ...editingCharger, charger_type: e.target.value, chargerType: e.target.value })}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs rounded-xl p-2.5 font-bold"
+                  >
+                    <option value="DC_FAST">DC Fast Charger</option>
+                    <option value="AC">AC Level 2</option>
+                    <option value="CCS2">CCS Type 2</option>
+                    <option value="TYPE2">Type 2 AC</option>
+                    <option value="CHADEMO">CHAdeMO</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-[var(--text-muted)] block mb-1">Connector Standard</label>
+                  <select
+                    value={editingCharger.connector_type || editingCharger.connectorType || "CCS2"}
+                    onChange={(e) => setEditingCharger({ ...editingCharger, connector_type: e.target.value, connectorType: e.target.value })}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs rounded-xl p-2.5 font-bold"
+                  >
+                    <option value="CCS2">CCS2 (Combo 2)</option>
+                    <option value="Type 2">Type 2 (IEC 62196)</option>
+                    <option value="CHAdeMO">CHAdeMO</option>
+                    <option value="GB/T">GB/T</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-[var(--text-muted)] block mb-1">Operational Status</label>
+                <select
+                  value={editingCharger.status || "AVAILABLE"}
+                  onChange={(e) => setEditingCharger({ ...editingCharger, status: e.target.value })}
+                  className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs rounded-xl p-2.5 font-bold"
+                >
+                  <option value="AVAILABLE">AVAILABLE</option>
+                  <option value="CHARGING">CHARGING</option>
+                  <option value="RESERVED">RESERVED</option>
+                  <option value="FAULTED">FAULTED</option>
+                  <option value="MAINTENANCE">MAINTENANCE</option>
+                  <option value="OFFLINE">OFFLINE</option>
+                </select>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingCharger(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-[var(--bg-surface-raised)] text-xs font-bold text-[var(--text-primary)] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-500/20 cursor-pointer"
+                >
+                  {submitting ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

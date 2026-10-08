@@ -1,33 +1,5 @@
+import api from "./api";
 import axios from "axios";
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5001/api";
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 8000,
-  headers: {
-    "Content-Type": "application/json",
-  },
-});
-
-// Intercept request to attach JWT token if available
-api.interceptors.request.use(
-  (config) => {
-    let user = null;
-    try {
-      user = JSON.parse(localStorage.getItem("ev_current_user") || "null");
-    } catch {
-      user = null;
-    }
-    const directToken = localStorage.getItem("ev_token");
-    const token = directToken || user?.token || user?.counterId || user?.email || user?.id;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
 
 export const apiService = {
   // Health

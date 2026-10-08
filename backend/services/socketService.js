@@ -84,7 +84,7 @@ export const getIO = () => {
 };
 
 /**
- * Broadcast charger status changed
+ * Broadcast charger status changed / available
  */
 export const emitChargerStatusChanged = (charger) => {
   if (!io) return;
@@ -97,13 +97,37 @@ export const emitChargerStatusChanged = (charger) => {
   io.to("owner_dashboard").emit("charger:statusChanged", payload);
   io.emit("charger_status_changed", payload);
   io.emit("charger:statusChanged", payload);
+  if (charger.status === "AVAILABLE" || charger.operationalStatus === "AVAILABLE") {
+    io.emit("chargerAvailable", payload);
+    io.emit("charger:available", payload);
+  }
   if (charger.stationId) {
     io.to(`station_${charger.stationId}`).emit("charger_status_changed", payload);
     io.to(`station_${charger.stationId}`).emit("charger:statusChanged", payload);
+    if (charger.status === "AVAILABLE") io.to(`station_${charger.stationId}`).emit("chargerAvailable", payload);
   }
   if (charger.chargerId) {
     io.to(`charger_${charger.chargerId}`).emit("charger_status_changed", payload);
     io.to(`charger_${charger.chargerId}`).emit("charger:statusChanged", payload);
+  }
+};
+
+/**
+ * Explicit emit for charger becoming available immediately
+ */
+export const emitChargerAvailable = (chargerData) => {
+  if (!io) return;
+  const payload = {
+    event: "chargerAvailable",
+    timestamp: new Date().toISOString(),
+    charger: chargerData,
+    ...chargerData,
+  };
+  io.emit("chargerAvailable", payload);
+  io.emit("charger:available", payload);
+  io.to("owner_dashboard").emit("chargerAvailable", payload);
+  if (chargerData.stationId || chargerData.station_id) {
+    io.to(`station_${chargerData.stationId || chargerData.station_id}`).emit("chargerAvailable", payload);
   }
 };
 
@@ -141,10 +165,12 @@ export const emitSessionStarted = (session) => {
   io.to("owner_dashboard").emit("charger:chargingStarted", payload);
   io.to("owner_dashboard").emit("session:started", payload);
   io.emit("session_started", payload);
+  io.emit("chargingStarted", payload);
   io.emit("charger:chargingStarted", payload);
   io.emit("session:started", payload);
   if (session.stationId) {
     io.to(`station_${session.stationId}`).emit("session_started", payload);
+    io.to(`station_${session.stationId}`).emit("chargingStarted", payload);
     io.to(`station_${session.stationId}`).emit("charger:chargingStarted", payload);
   }
   if (session.customerId) io.to(`user_${session.customerId}`).emit("session_started", payload);
@@ -164,10 +190,12 @@ export const emitSessionStopped = (session) => {
   io.to("owner_dashboard").emit("charger:chargingStopped", payload);
   io.to("owner_dashboard").emit("session:completed", payload);
   io.emit("session_stopped", payload);
+  io.emit("chargingCompleted", payload);
   io.emit("charger:chargingStopped", payload);
   io.emit("session:completed", payload);
   if (session.stationId) {
     io.to(`station_${session.stationId}`).emit("session_stopped", payload);
+    io.to(`station_${session.stationId}`).emit("chargingCompleted", payload);
     io.to(`station_${session.stationId}`).emit("charger:chargingStopped", payload);
   }
   if (session.customerId) io.to(`user_${session.customerId}`).emit("session_stopped", payload);
@@ -179,19 +207,22 @@ export const emitSessionStopped = (session) => {
 export const emitBookingCreated = (booking, stats = null) => {
   if (!io) return;
   const payload = {
-    event: "booking:created",
+    event: "bookingCreated",
     timestamp: new Date().toISOString(),
     booking,
     stats,
   };
   io.to("owner_dashboard").emit("booking_created", payload);
   io.to("owner_dashboard").emit("booking:created", payload);
+  io.emit("bookingCreated", payload);
   io.emit("booking_created", payload);
   io.emit("booking:created", payload);
   if (booking.stationId || booking.station_id) {
+    io.to(`station_${booking.stationId || booking.station_id}`).emit("bookingCreated", payload);
     io.to(`station_${booking.stationId || booking.station_id}`).emit("booking:created", payload);
   }
   if (booking.userId || booking.user_id || booking.customerId || booking.customer_id) {
+    io.to(`user_${booking.userId || booking.user_id || booking.customerId || booking.customer_id}`).emit("bookingCreated", payload);
     io.to(`user_${booking.userId || booking.user_id || booking.customerId || booking.customer_id}`).emit("booking:created", payload);
   }
 };
@@ -339,22 +370,37 @@ export const emitLoadBalanced = (profile) => {
   io.emit("load_balanced", payload);
 };
 
-/**
- * Broadcast updated dashboard statistics
- */
 export const emitDashboardStats = (stats) => {
   if (!io) return;
-  io.to("owner_dashboard").emit("dashboard_stats_updated", {
-    event: "dashboard_stats_updated",
+  const payload = {
+    event: "dashboard_stats",
     timestamp: new Date().toISOString(),
     stats,
-  });
+  };
+  io.to("owner_dashboard").emit("dashboard_stats", payload);
+  io.emit("dashboard_stats", payload);
+};
+
+/**
+ * Broadcast Station Updated (location coordinates, tariffs, status)
+ */
+export const emitStationUpdated = (station) => {
+  if (!io) return;
+  const payload = {
+    event: "station_updated",
+    timestamp: new Date().toISOString(),
+    station,
+  };
+  io.to("owner_dashboard").emit("station_updated", payload);
+  io.emit("station_updated", payload);
+  io.emit("station:updated", payload);
 };
 
 export default {
   initSocket,
   getIO,
   emitChargerStatusChanged,
+  emitChargerAvailable,
   emitTelemetryUpdated,
   emitSessionStarted,
   emitSessionStopped,
@@ -368,4 +414,5 @@ export default {
   emitNotification,
   emitLoadBalanced,
   emitDashboardStats,
+  emitStationUpdated,
 };

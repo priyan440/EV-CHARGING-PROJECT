@@ -105,7 +105,7 @@ export default function OwnerReports() {
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in text-slate-100">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in text-[var(--text-primary)]">
       {/* Toast Alert */}
       {toastMsg && (
         <div className="fixed top-6 right-6 z-50 bg-blue-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-blue-400/30 animate-bounce">
@@ -115,13 +115,13 @@ export default function OwnerReports() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/80 p-6 rounded-3xl border border-slate-800 shadow-xl">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 theme-card p-6 rounded-3xl shadow-xl">
         <div>
-          <h1 className="text-2xl font-black text-white flex items-center gap-3">
-            <FileText className="w-7 h-7 text-teal-400" />
+          <h1 className="text-2xl font-black text-[var(--text-primary)] flex items-center gap-3">
+            <FileText className="w-7 h-7 text-teal-500" />
             Report Generation & Audit Export
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-[var(--text-muted)] mt-1">
             Generate formal Daily, Weekly, Monthly, Revenue, and Energy Consumption statements directly from MySQL.
           </p>
         </div>
@@ -129,14 +129,14 @@ export default function OwnerReports() {
         <div className="flex items-center gap-3">
           <button
             onClick={exportCSV}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-slate-950 font-bold text-sm transition-all shadow-lg shadow-teal-500/25 active:scale-95"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-sm transition-all shadow-lg shadow-teal-500/25 active:scale-95 cursor-pointer"
           >
             <Download className="w-4 h-4" />
             Export CSV
           </button>
           <button
             onClick={handlePrint}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-sm font-semibold transition-all"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--bg-surface-raised)] hover:bg-[var(--border-subtle)] text-[var(--text-primary)] border border-[var(--border-subtle)] text-sm font-semibold transition-all cursor-pointer"
           >
             <Printer className="w-4 h-4" />
             Print Statement
@@ -155,10 +155,10 @@ export default function OwnerReports() {
           <button
             key={tab.id}
             onClick={() => setReportType(tab.id)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all cursor-pointer ${
               reportType === tab.id
-                ? "bg-teal-600 text-slate-950 shadow-md"
-                : "bg-slate-900/80 text-slate-400 hover:text-white border border-slate-800"
+                ? "bg-teal-600 text-white shadow-md font-extrabold"
+                : "bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]"
             }`}
           >
             {tab.label}
@@ -167,58 +167,58 @@ export default function OwnerReports() {
       </div>
 
       {/* Summary Banner for Report */}
-      <div className="bg-slate-900/90 rounded-3xl p-6 border border-slate-800 shadow-xl">
+      <div className="theme-card rounded-3xl p-6 shadow-xl">
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-center">
-          <div className="p-3 bg-slate-800/60 rounded-2xl">
-            <div className="text-[10px] text-slate-400 uppercase">Statement Period</div>
-            <div className="font-bold text-white text-sm mt-1">Current Active Month</div>
+          <div className="p-3 bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-2xl">
+            <div className="text-[10px] text-[var(--text-muted)] uppercase font-semibold">Statement Period</div>
+            <div className="font-bold text-[var(--text-primary)] text-sm mt-1">Current Active Month</div>
           </div>
-          <div className="p-3 bg-slate-800/60 rounded-2xl">
-            <div className="text-[10px] text-slate-400 uppercase">Total Revenue</div>
-            <div className="font-bold text-green-400 text-sm mt-1">₹{(revenueSummary?.totalRevenue || 0).toLocaleString("en-IN")}</div>
+          <div className="p-3 bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-2xl">
+            <div className="text-[10px] text-[var(--text-muted)] uppercase font-semibold">Total Revenue</div>
+            <div className="font-bold text-green-600 dark:text-green-400 text-sm mt-1">₹{(revenueSummary?.totalRevenue || 0).toLocaleString("en-IN")}</div>
           </div>
-          <div className="p-3 bg-slate-800/60 rounded-2xl">
-            <div className="text-[10px] text-slate-400 uppercase">Delivered Sessions</div>
-            <div className="font-bold text-amber-400 text-sm mt-1">{sessions.length} Sessions</div>
+          <div className="p-3 bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-2xl">
+            <div className="text-[10px] text-[var(--text-muted)] uppercase font-semibold">Delivered Sessions</div>
+            <div className="font-bold text-amber-600 dark:text-amber-400 text-sm mt-1">{sessions.length} Sessions</div>
           </div>
-          <div className="p-3 bg-slate-800/60 rounded-2xl">
-            <div className="text-[10px] text-slate-400 uppercase">Operational Hubs</div>
-            <div className="font-bold text-cyan-400 text-sm mt-1">{stations.length} Stations</div>
+          <div className="p-3 bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-2xl">
+            <div className="text-[10px] text-[var(--text-muted)] uppercase font-semibold">Operational Hubs</div>
+            <div className="font-bold text-cyan-600 dark:text-cyan-400 text-sm mt-1">{stations.length} Stations</div>
           </div>
         </div>
       </div>
 
       {/* Report Table Display */}
-      <div className="bg-slate-900/90 rounded-3xl p-6 border border-slate-800 shadow-xl overflow-x-auto">
+      <div className="theme-card rounded-3xl p-6 shadow-xl overflow-x-auto">
         {loading ? (
           <div className="text-center py-16">
             <div className="w-10 h-10 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-            <p className="text-slate-400 text-sm animate-pulse">Generating database report...</p>
+            <p className="text-[var(--text-muted)] text-sm animate-pulse">Generating database report...</p>
           </div>
         ) : reportType === "REVENUE" ? (
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px]">
-                <th className="pb-3 font-semibold">Payment ID</th>
-                <th className="pb-3 font-semibold">Customer</th>
-                <th className="pb-3 font-semibold">Method</th>
-                <th className="pb-3 font-semibold">Amount</th>
-                <th className="pb-3 font-semibold">Owner Net</th>
-                <th className="pb-3 font-semibold">Date</th>
-                <th className="pb-3 font-semibold">Status</th>
+              <tr className="border-b border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] text-[var(--text-muted)] uppercase text-[10px]">
+                <th className="p-3 font-semibold">Payment ID</th>
+                <th className="p-3 font-semibold">Customer</th>
+                <th className="p-3 font-semibold">Method</th>
+                <th className="p-3 font-semibold">Amount</th>
+                <th className="p-3 font-semibold">Owner Net</th>
+                <th className="p-3 font-semibold">Date</th>
+                <th className="p-3 font-semibold">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800 text-slate-200">
+            <tbody className="divide-y divide-[var(--border-subtle)] text-[var(--text-primary)]">
               {transactions.map((t) => (
-                <tr key={t.paymentId || t.payment_id || t.id} className="hover:bg-slate-800/40">
-                  <td className="py-3 font-mono font-bold text-blue-400">{t.paymentId || t.payment_id}</td>
-                  <td className="py-3 font-medium text-white">{t.customerName || t.customer_name || "EV Driver"}</td>
-                  <td className="py-3 text-slate-300">{t.paymentMethod || t.payment_method || "UPI"}</td>
-                  <td className="py-3 font-bold text-green-400">₹{parseFloat(t.amount || 0).toFixed(2)}</td>
-                  <td className="py-3 font-bold text-emerald-300">₹{parseFloat(t.ownerAmount || t.owner_amount || (t.amount * 0.95)).toFixed(2)}</td>
-                  <td className="py-3 text-slate-400">{formatDate(t.createdAt || t.created_at || t.date || t.paymentDate)}</td>
-                  <td className="py-3">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300">
+                <tr key={t.paymentId || t.payment_id || t.id} className="hover:bg-[var(--bg-surface-raised)]">
+                  <td className="py-3 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">{t.paymentId || t.payment_id}</td>
+                  <td className="py-3 px-3 font-medium text-[var(--text-primary)]">{t.customerName || t.customer_name || "EV Driver"}</td>
+                  <td className="py-3 px-3 text-[var(--text-muted)]">{t.paymentMethod || t.payment_method || "UPI"}</td>
+                  <td className="py-3 px-3 font-bold text-green-600 dark:text-green-400">₹{parseFloat(t.amount || 0).toFixed(2)}</td>
+                  <td className="py-3 px-3 font-bold text-emerald-600 dark:text-emerald-300">₹{parseFloat(t.ownerAmount || t.owner_amount || (t.amount * 0.95)).toFixed(2)}</td>
+                  <td className="py-3 px-3 text-[var(--text-muted)]">{formatDate(t.createdAt || t.created_at || t.date || t.paymentDate)}</td>
+                  <td className="py-3 px-3">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/20">
                       {t.status || t.payment_status || "SUCCESS"}
                     </span>
                   </td>
@@ -229,27 +229,27 @@ export default function OwnerReports() {
         ) : (
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px]">
-                <th className="pb-3 font-semibold">Session ID</th>
-                <th className="pb-3 font-semibold">Customer</th>
-                <th className="pb-3 font-semibold">Station / Charger</th>
-                <th className="pb-3 font-semibold">Energy (kWh)</th>
-                <th className="pb-3 font-semibold">Total Cost</th>
-                <th className="pb-3 font-semibold">Duration</th>
-                <th className="pb-3 font-semibold">Status</th>
+              <tr className="border-b border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] text-[var(--text-muted)] uppercase text-[10px]">
+                <th className="p-3 font-semibold">Session ID</th>
+                <th className="p-3 font-semibold">Customer</th>
+                <th className="p-3 font-semibold">Station / Charger</th>
+                <th className="p-3 font-semibold">Energy (kWh)</th>
+                <th className="p-3 font-semibold">Total Cost</th>
+                <th className="p-3 font-semibold">Duration</th>
+                <th className="p-3 font-semibold">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800 text-slate-200">
+            <tbody className="divide-y divide-[var(--border-subtle)] text-[var(--text-primary)]">
               {sessions.map((s) => (
-                <tr key={s.sessionId || s._id} className="hover:bg-slate-800/40">
-                  <td className="py-3 font-mono font-bold text-blue-400">{s.sessionId}</td>
-                  <td className="py-3 font-medium text-white">{s.customerName}</td>
-                  <td className="py-3 text-slate-300">{s.stationId} - {s.chargerId}</td>
-                  <td className="py-3 font-bold text-amber-400">{s.energyConsumed || s.energyConsumedKwh || 22.5} kWh</td>
-                  <td className="py-3 font-bold text-green-400">₹{s.totalCost || s.amount || 380}</td>
-                  <td className="py-3 text-slate-300">{s.duration || "45m"}</td>
-                  <td className="py-3">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300">
+                <tr key={s.sessionId || s._id} className="hover:bg-[var(--bg-surface-raised)]">
+                  <td className="py-3 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">{s.sessionId}</td>
+                  <td className="py-3 px-3 font-medium text-[var(--text-primary)]">{s.customerName}</td>
+                  <td className="py-3 px-3 text-[var(--text-muted)]">{s.stationId} - {s.chargerId}</td>
+                  <td className="py-3 px-3 font-bold text-amber-600 dark:text-amber-400">{s.energyConsumed || s.energyConsumedKwh || 22.5} kWh</td>
+                  <td className="py-3 px-3 font-bold text-green-600 dark:text-green-400">₹{s.totalCost || s.amount || 380}</td>
+                  <td className="py-3 px-3 text-[var(--text-muted)]">{s.duration || "45m"}</td>
+                  <td className="py-3 px-3">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/20">
                       {s.status}
                     </span>
                   </td>

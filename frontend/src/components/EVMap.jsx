@@ -127,6 +127,20 @@ export default function EVMap({
 
   useEffect(() => {
     loadStations();
+
+    // Listen for live station coordinate and status updates
+    const handleStationChange = () => {
+      stationService.getMapStations().then((res) => {
+        if (res?.success && Array.isArray(res.data)) {
+          setStations(res.data);
+        }
+      }).catch(() => {});
+    };
+
+    window.addEventListener("station_updated", handleStationChange);
+    return () => {
+      window.removeEventListener("station_updated", handleStationChange);
+    };
   }, []);
 
   // Geolocation

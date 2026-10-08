@@ -35,6 +35,7 @@ import SlotSelection from "./pages/SlotSelection";
 import BookingSummary from "./pages/BookingSummary";
 import PaymentPage from "./pages/PaymentPage";
 import BookingSuccess from "./pages/BookingSuccess";
+import PaymentFailed from "./pages/PaymentFailed";
 import BookingDetails from "./pages/BookingDetails";
 import LiveChargingSessionPage from "./pages/LiveChargingSessionPage";
 import HistoryAnalytics from "./pages/HistoryAnalytics";
@@ -72,6 +73,8 @@ import AdminSystemHealth from "./pages/admin/AdminSystemHealth";
 import AdminTechnicians from "./pages/admin/AdminTechnicians";
 import AdminBookings from "./pages/admin/AdminBookings";
 import AdminPricing from "./pages/admin/AdminPricing";
+import AdminRealtimeAnalytics from "./pages/admin/AdminRealtimeAnalytics";
+import AdminEmergencyRequests from "./pages/admin/AdminEmergencyRequests";
 
 // New EV Platform Scanner & Session Controllers
 import BookingVerify from "./pages/BookingVerify";
@@ -272,7 +275,7 @@ function App() {
         <Route
           path="/customer/book-slot/:stationId"
           element={
-            <ProtectedRoute allowedRoles={["CUSTOMER", "USER"]}>
+            <ProtectedRoute allowedRoles={["CUSTOMER", "USER", "ADMIN", "STATION_OWNER", "OWNER", "TECHNICIAN"]}>
               <MainLayout>
                 <BookSlot />
               </MainLayout>
@@ -282,7 +285,7 @@ function App() {
         <Route
           path="/customer/book-slot"
           element={
-            <ProtectedRoute allowedRoles={["CUSTOMER", "USER"]}>
+            <ProtectedRoute allowedRoles={["CUSTOMER", "USER", "ADMIN", "STATION_OWNER", "OWNER", "TECHNICIAN"]}>
               <MainLayout>
                 <BookSlot />
               </MainLayout>
@@ -292,7 +295,7 @@ function App() {
         <Route
           path="/book-slot/:stationId"
           element={
-            <ProtectedRoute allowedRoles={["CUSTOMER", "USER"]}>
+            <ProtectedRoute allowedRoles={["CUSTOMER", "USER", "ADMIN", "STATION_OWNER", "OWNER", "TECHNICIAN"]}>
               <MainLayout>
                 <BookSlot />
               </MainLayout>
@@ -302,7 +305,7 @@ function App() {
         <Route
           path="/book-slot"
           element={
-            <ProtectedRoute allowedRoles={["CUSTOMER", "USER"]}>
+            <ProtectedRoute allowedRoles={["CUSTOMER", "USER", "ADMIN", "STATION_OWNER", "OWNER", "TECHNICIAN"]}>
               <MainLayout>
                 <BookSlot />
               </MainLayout>
@@ -312,7 +315,7 @@ function App() {
         <Route
           path="/payment/:bookingId"
           element={
-            <ProtectedRoute allowedRoles={["CUSTOMER", "USER"]}>
+            <ProtectedRoute allowedRoles={["CUSTOMER", "USER", "ADMIN", "STATION_OWNER", "OWNER", "TECHNICIAN"]}>
               <MainLayout>
                 <BookSlot />
               </MainLayout>
@@ -380,11 +383,31 @@ function App() {
           }
         />
         <Route
-          path="/booking/success"
+          path="/booking-success"
           element={
             <ProtectedRoute allowedRoles={["CUSTOMER", "USER"]}>
               <MainLayout>
                 <BookingSuccess />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/payment-failed"
+          element={
+            <ProtectedRoute allowedRoles={["CUSTOMER", "USER"]}>
+              <MainLayout>
+                <PaymentFailed />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/customer/payment-failed"
+          element={
+            <ProtectedRoute allowedRoles={["CUSTOMER", "USER"]}>
+              <MainLayout>
+                <PaymentFailed />
               </MainLayout>
             </ProtectedRoute>
           }
@@ -1176,11 +1199,32 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={["ADMIN"]}>
               <MainLayout>
-                <AdminDashboard />
+                <AdminRealtimeAnalytics />
               </MainLayout>
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/admin/realtime-analytics"
+          element={
+            <ProtectedRoute allowedRoles={["ADMIN"]}>
+              <MainLayout>
+                <AdminRealtimeAnalytics />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/emergency"
+          element={
+            <ProtectedRoute allowedRoles={["ADMIN"]}>
+              <MainLayout>
+                <AdminEmergencyRequests />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/admin/emergency-requests" element={<Navigate to="/admin/emergency" replace />} />
         <Route
           path="/admin/audit-logs"
           element={

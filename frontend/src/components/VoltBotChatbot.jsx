@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -23,15 +23,15 @@ import {
   FiArrowRight,
   FiCopy,
   FiCheck,
-  FiMessageSquare,
   FiActivity,
   FiCompass,
+  FiCpu,
+  FiRadio,
 } from 'react-icons/fi';
-import { useSystemState } from '../contexts/SystemStateContext';
 import { useAuth } from '../contexts/AuthContext';
-import { processChatbotMessage } from '../services/chatbotService';
+import { chatbotService } from '../services/chatbotService';
 
-// Audio tone synthesizer for notification chimes (Web Audio API)
+// Web Audio tone synthesizer for chat sound feedback
 const playChime = (type = 'receive') => {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -61,29 +61,30 @@ const playChime = (type = 'receive') => {
       osc.stop(ctx.currentTime + 0.22);
     }
   } catch {
-    // AudioContext blocked or not supported
+    // AudioContext blocked
   }
 };
 
 const QUICK_ACTIONS = [
-  { id: 'stations', label: '⚡ Live Stations', prompt: 'Check live charging stations availability near me' },
-  { id: 'bookings', label: '🔍 Track Booking', prompt: 'Track my active charging booking status' },
-  { id: 'tariff', label: '💰 Tariff Calculator', prompt: 'Calculate charging cost and time for Tata Nexon EV 20% to 80%' },
-  { id: 'emergency', label: '🚨 Emergency SOS', prompt: 'Emergency connector stuck in car and station fault' },
-  { id: 'connectors', label: '🔌 Connector Guide', prompt: 'Show EV connector types and compatibility' },
+  { id: 'stations', label: '⚡ Live Stations', prompt: 'Find available DC fast charging stations near me' },
+  { id: 'bookings', label: '🔍 Track My Booking', prompt: 'What is the status of my charging booking?' },
+  { id: 'charging', label: '🔋 Am I Charging?', prompt: 'Am I charging right now? Check my live battery status' },
+  { id: 'cost', label: '💰 Estimate Cost', prompt: 'How much will it cost to charge from 30% to 90%?' },
+  { id: 'emergency', label: '🚨 Stuck Connector / SOS', prompt: 'My charging connector is stuck in vehicle' },
 ];
 
 const INITIAL_MESSAGES = [
   {
     sender: 'bot',
-    text: `⚡ **Greetings! I am VoltBot AI 2.0**, your real-time EV charging copilot.
-
-I am connected live to station telemetry across the network. How can I power up your journey today?`,
+    text: `⚡ **Greetings! I am VoltBot AI 2.0**, your real-time EV charging copilot directly connected to MySQL database & live telemetry.
+    
+Ask me anything about live stations, your reservations, charging telemetry, tariffs, or emergency assistance.`,
     type: 'text',
     suggestions: [
-      '⚡ Check Live Stations in Chennai',
-      '🔍 Track My Booking Status',
-      '💰 Estimate Cost for Tata Nexon EV',
+      '⚡ Find Available Stations in Chennai',
+      '🔍 What is my booking status?',
+      '🔋 Am I charging right now?',
+      '💰 Estimate Cost for 30% to 90%',
       '🚨 Connector is Stuck / Emergency',
     ],
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -92,13 +93,14 @@ I am connected live to station telemetry across the network. How can I power up 
 
 export default function VoltBotChatbot() {
   const navigate = useNavigate();
-  const { stations, bookings, systemSettings } = useSystemState();
   const { currentUser } = useAuth();
 
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [voiceOutEnabled, setVoiceOutEnabled] = useState(false);
+  const [systemTelemetry, setSystemTelemetry] = useState(null);
+
   const [messages, setMessages] = useState(() => {
     try {
       const saved = sessionStorage.getItem('voltbot_history');
@@ -107,6 +109,7 @@ export default function VoltBotChatbot() {
       return INITIAL_MESSAGES;
     }
   });
+
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
@@ -115,13 +118,24 @@ export default function VoltBotChatbot() {
   const messagesEndRef = useRef(null);
   const recognitionRef = useRef(null);
 
+  // Fetch real system telemetry status on mount & when opened
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const res = await chatbotService.getAISystemStatus();
+        if (res.success) {
+          setSystemTelemetry(res);
+        }
+      } catch {}
+    };
+    fetchStatus();
+  }, [isOpen]);
+
   // Persist session history
   useEffect(() => {
     try {
       sessionStorage.setItem('voltbot_history', JSON.stringify(messages));
-    } catch {
-      // Storage quota
-    }
+    } catch {}
   }, [messages]);
 
   // Auto-scroll
@@ -133,7 +147,7 @@ export default function VoltBotChatbot() {
 
   // Dismiss tooltip after 8s
   useEffect(() => {
-    const timer = setTimeout(() => setShowTooltip(false), 9000);
+    const timer = setTimeout(() => setShowTooltip(false), 8000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -147,9 +161,7 @@ export default function VoltBotChatbot() {
       utterance.rate = 1.05;
       utterance.pitch = 1.0;
       window.speechSynthesis.speak(utterance);
-    } catch {
-      // Speech synthesis error
-    }
+    } catch {}
   };
 
   // Speech-To-Text helper
@@ -204,7 +216,8 @@ export default function VoltBotChatbot() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleSend = (textToSend) => {
+  // Main message sender calling real backend AI endpoint
+  const handleSend = async (textToSend) => {
     const query = (textToSend || input).trim();
     if (!query) return;
 
@@ -220,26 +233,35 @@ export default function VoltBotChatbot() {
     if (!textToSend) setInput('');
     setIsTyping(true);
 
-    // Context for live query checking
-    const ctx = {
-      stations: stations || [],
-      bookings: bookings || [],
-      currentUser: currentUser || null,
-      systemSettings: systemSettings || {},
-    };
-
-    setTimeout(() => {
-      const botResponse = processChatbotMessage(query, ctx);
+    try {
+      const botResponse = await chatbotService.sendAIMessage(query, messages);
       const newBotMsg = {
-        ...botResponse,
+        sender: 'bot',
+        text: botResponse.text || "I've processed your query.",
+        type: botResponse.type || 'text',
+        data: botResponse.data || null,
+        suggestions: botResponse.suggestions || [
+          '⚡ Find Stations',
+          '🔍 Track Bookings',
+          '💰 Tariffs',
+        ],
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
       setMessages((prev) => [...prev, newBotMsg]);
-      setIsTyping(false);
       if (soundEnabled) playChime('receive');
-      if (voiceOutEnabled) speakText(botResponse.text);
-    }, 600);
+      if (voiceOutEnabled) speakText(newBotMsg.text);
+    } catch (err) {
+      const errorMsg = {
+        sender: 'bot',
+        text: 'I could not connect to the live EV network servers. Please check your connection.',
+        type: 'text',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   const clearChat = () => {
@@ -247,19 +269,18 @@ export default function VoltBotChatbot() {
     sessionStorage.removeItem('voltbot_history');
   };
 
-  // Format simple markdown into bold text & linebreaks
+  // Format markdown into bold text & linebreaks
   const renderFormattedText = (txt) => {
     if (!txt) return null;
     const lines = txt.split('\n');
     return lines.map((line, idx) => {
-      // Split bold markers **word**
       const parts = line.split(/(\*\*.*?\*\*)/g);
       return (
         <p key={idx} className={line.trim() === '' ? 'h-2' : 'min-h-[1.25rem]'}>
           {parts.map((part, pIdx) => {
             if (part.startsWith('**') && part.endsWith('**')) {
               return (
-                <strong key={pIdx} className="font-bold text-slate-900 dark:text-white">
+                <strong key={pIdx} className="font-bold text-[var(--text-primary)]">
                   {part.slice(2, -2)}
                 </strong>
               );
@@ -292,163 +313,126 @@ export default function VoltBotChatbot() {
             >
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
               <div className="text-[11px] leading-snug">
-                <span className="font-bold text-blue-400">Ask VoltBot AI 2.0</span>: Real-time stations, bookings & tariff checks!
+                <span className="font-bold text-blue-400">VoltBot AI Agent</span>: Real database & live telemetry copilot!
               </div>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowTooltip(false);
                 }}
-                className="text-slate-400 hover:text-white p-0.5"
+                className="text-slate-400 hover:text-white ml-1 text-xs"
               >
-                <FiX size={12} />
+                ✕
               </button>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* The Main Glowing Trigger Button */}
+        {/* Circular Pulse Button */}
         <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
+          whileHover={{ scale: 1.08 }}
+          whileTap={{ scale: 0.92 }}
           onClick={() => {
             setIsOpen(!isOpen);
             setShowTooltip(false);
           }}
-          className="relative group flex items-center gap-2.5 px-4 sm:px-5 py-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold rounded-full shadow-xl shadow-blue-500/35 border border-white/20 cursor-pointer overflow-hidden transition-all duration-300"
+          className="relative w-14 h-14 rounded-full bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-500 text-white flex items-center justify-center shadow-xl shadow-blue-600/35 hover:shadow-blue-500/50 transition-all border-2 border-white/20 cursor-pointer group"
           aria-label="Open VoltBot AI Chatbot"
         >
-          {/* Animated Sheen effect */}
-          <div className="absolute inset-0 w-1/2 h-full bg-white/20 skew-x-12 -translate-x-full group-hover:translate-x-[300%] transition-transform duration-1000" />
-
-          {/* Pulse ring indicator */}
-          <span className="relative flex h-3 w-3">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-400" />
-          </span>
-
-          <FiZap className="w-5 h-5 text-amber-300 group-hover:rotate-12 transition-transform duration-300 shrink-0" />
-
-          <span className="text-xs sm:text-sm font-black tracking-wide">
-            {isOpen ? 'Close VoltBot' : 'Ask VoltBot AI'}
-          </span>
-
-          {!isOpen && (
-            <span className="hidden sm:inline-block text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-mono font-semibold">
-              Live 2.0
-            </span>
+          {isOpen ? (
+            <FiX size={24} className="transition-transform group-hover:rotate-90" />
+          ) : (
+            <>
+              <FiCpu size={24} className="animate-pulse" />
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-400 border-2 border-slate-900 rounded-full animate-pulse" />
+            </>
           )}
         </motion.button>
       </div>
 
       {/* ============================================================ */}
-      {/* CHAT DRAWER / WINDOW                                         */}
+      {/* CHATBOT DRAWER MODAL                                         */}
       {/* ============================================================ */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: 30, scale: 0.92 }}
+            initial={{ opacity: 0, y: 30, scale: 0.94 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 30, scale: 0.92 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className={`fixed bottom-22 right-3 sm:right-6 z-50 bg-white/95 dark:bg-[#091124]/95 backdrop-blur-2xl border border-slate-200 dark:border-blue-900/60 shadow-2xl rounded-3xl overflow-hidden flex flex-col transition-all duration-300 ${
+            exit={{ opacity: 0, y: 30, scale: 0.94 }}
+            transition={{ duration: 0.2 }}
+            className={`fixed bottom-24 right-4 sm:right-6 z-50 flex flex-col rounded-3xl overflow-hidden shadow-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] backdrop-blur-2xl transition-all ${
               isExpanded
-                ? 'w-[95vw] sm:w-[580px] h-[85vh] max-h-[740px]'
-                : 'w-[92vw] sm:w-[420px] h-[580px] max-h-[80vh]'
+                ? 'w-[94vw] sm:w-[680px] h-[85vh] max-h-[820px]'
+                : 'w-[92vw] sm:w-[420px] h-[600px] max-h-[85vh]'
             }`}
           >
             {/* 1. HEADER */}
-            <div className="p-3.5 sm:p-4 bg-gradient-to-r from-slate-900 via-[#0B1530] to-slate-900 text-white border-b border-slate-800 flex items-center justify-between shrink-0 select-none">
-              <div className="flex items-center gap-2.5">
+            <div className="p-4 bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-900 text-white flex items-center justify-between shadow-md relative overflow-hidden shrink-0">
+              <div className="flex items-center gap-3 relative z-10">
                 <div className="relative">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white font-black shadow-md shadow-blue-500/30">
-                    <FiZap size={20} className="text-amber-300" />
+                  <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center shadow-inner">
+                    <FiZap size={20} className="text-cyan-300" />
                   </div>
-                  <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-slate-900 rounded-full" />
+                  <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-blue-900 rounded-full animate-ping" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-1.5">
-                    <h4 className="font-black text-sm text-white tracking-wide">VoltBot AI</h4>
-                    <span className="px-1.5 py-0.2 bg-blue-500/20 text-blue-300 text-[9px] font-mono font-bold rounded-md border border-blue-500/30">
-                      TELEMETRY
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-black text-sm text-white tracking-wide">VoltBot AI 2.0</h4>
+                    <span className="px-1.5 py-0.5 text-[9px] font-extrabold bg-cyan-400/20 text-cyan-200 border border-cyan-400/30 rounded-full font-mono uppercase">
+                      EV AGENT
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] text-slate-400">
-                    <span className="flex items-center gap-1 text-emerald-400 font-medium">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      Live Checking Online
+                  <p className="text-[10px] text-blue-200 flex items-center gap-1.5 mt-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    <span>
+                      {systemTelemetry?.liveStationsCount
+                        ? `${systemTelemetry.liveStationsCount} Stations Live • ${systemTelemetry.liveAvailableSlots} Free Bays`
+                        : 'Connected to Live MySQL EV Network'}
                     </span>
-                    <span>•</span>
-                    <span className="font-mono text-cyan-400">{stations?.length || 24} Stations Live</span>
-                  </div>
+                  </p>
                 </div>
               </div>
 
-              {/* Header Action Tools */}
-              <div className="flex items-center gap-1">
-                {/* Voice Read Aloud Toggle */}
+              {/* Controls */}
+              <div className="flex items-center gap-1 relative z-10 text-white/80">
                 <button
                   onClick={() => setVoiceOutEnabled(!voiceOutEnabled)}
-                  className={`p-2 rounded-xl text-xs transition cursor-pointer ${
-                    voiceOutEnabled ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  className={`p-2 rounded-xl hover:bg-white/10 transition cursor-pointer ${
+                    voiceOutEnabled ? 'text-cyan-300 bg-white/10' : ''
                   }`}
-                  title={voiceOutEnabled ? 'Voice Output ON' : 'Voice Output Muted'}
+                  title={voiceOutEnabled ? 'Mute AI voice output' : 'Enable voice responses'}
                 >
                   {voiceOutEnabled ? <FiVolume2 size={15} /> : <FiVolumeX size={15} />}
                 </button>
 
-                {/* Sound chime toggle */}
-                <button
-                  onClick={() => setSoundEnabled(!soundEnabled)}
-                  className={`p-2 rounded-xl text-xs transition cursor-pointer ${
-                    soundEnabled ? 'text-blue-400 hover:text-blue-300' : 'text-slate-500'
-                  }`}
-                  title={soundEnabled ? 'Sound Chimes Enabled' : 'Sound Chimes Disabled'}
-                >
-                  <FiActivity size={15} />
-                </button>
-
-                {/* Expand / Minimize Window */}
-                <button
-                  onClick={() => setIsExpanded(!isExpanded)}
-                  className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer hidden sm:block"
-                  title={isExpanded ? 'Restore Normal Size' : 'Expand Size'}
-                >
-                  {isExpanded ? <FiMinimize2 size={15} /> : <FiMaximize2 size={15} />}
-                </button>
-
-                {/* Clear Chat */}
                 <button
                   onClick={clearChat}
-                  className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition cursor-pointer"
-                  title="Clear Chat History"
+                  className="p-2 rounded-xl hover:bg-white/10 transition cursor-pointer"
+                  title="Clear conversation history"
                 >
                   <FiTrash2 size={15} />
                 </button>
 
-                {/* Close Drawer */}
+                <button
+                  onClick={() => setIsExpanded(!isExpanded)}
+                  className="p-2 rounded-xl hover:bg-white/10 transition hidden sm:flex cursor-pointer"
+                  title={isExpanded ? 'Collapse drawer' : 'Expand drawer'}
+                >
+                  {isExpanded ? <FiMinimize2 size={15} /> : <FiMaximize2 size={15} />}
+                </button>
+
                 <button
                   onClick={() => setIsOpen(false)}
-                  className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer ml-1"
+                  className="p-2 rounded-xl hover:bg-white/10 transition cursor-pointer"
+                  title="Close VoltBot"
                 >
                   <FiX size={18} />
                 </button>
               </div>
             </div>
 
-            {/* 2. REAL-TIME TELEMETRY STATS BANNER */}
-            <div className="bg-slate-100 dark:bg-slate-900/90 px-3.5 py-1.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-600 dark:text-slate-400 font-mono shrink-0">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-blue-500" />
-                <span>GRID TELEMETRY: OPTIMAL</span>
-              </span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                LATENCY: ~12ms
-              </span>
-            </div>
-
-            {/* 3. MESSAGES STREAM */}
-            <div className="flex-1 p-3.5 sm:p-4 overflow-y-auto space-y-3.5 bg-slate-50 dark:bg-[#070D1E]/70 text-slate-800 dark:text-slate-100">
+            {/* 2. MESSAGES STREAM */}
+            <div className="flex-1 p-3.5 sm:p-4 overflow-y-auto space-y-3.5 bg-[var(--bg-surface-raised)] text-[var(--text-primary)]">
               {messages.map((m, idx) => (
                 <div
                   key={idx}
@@ -459,7 +443,7 @@ export default function VoltBotChatbot() {
                     className={`max-w-[90%] sm:max-w-[85%] p-3.5 rounded-2xl text-xs leading-relaxed shadow-xs transition-all ${
                       m.sender === 'user'
                         ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-tr-none shadow-blue-500/20'
-                        : 'bg-white dark:bg-[#0F1B38] text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-blue-900/40 rounded-tl-none shadow-slate-200/50 dark:shadow-none'
+                        : 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-subtle)] rounded-tl-none'
                     }`}
                   >
                     {/* Render Text Body */}
@@ -469,80 +453,64 @@ export default function VoltBotChatbot() {
                     {/* RICH CARD: LIVE STATIONS LIST                        */}
                     {/* ==================================================== */}
                     {m.type === 'station_list' && Array.isArray(m.data) && (
-                      <div className="mt-3 space-y-2 border-t border-slate-200 dark:border-slate-800 pt-2.5">
+                      <div className="mt-3 space-y-2 border-t border-[var(--border-subtle)] pt-2.5">
                         <span className="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 block font-mono">
-                          Live Station Telemetry:
+                          Live Database Stations:
                         </span>
-                        {m.data.map((st) => {
-                          const availCount = st.chargers?.filter((c) => c.status === 'Available').length || 0;
-                          const totalCount = st.chargers?.length || 0;
-                          return (
-                            <div
-                              key={st.id}
-                              className="p-3 rounded-xl bg-slate-50 dark:bg-[#0B1530] border border-slate-200 dark:border-blue-900/50 space-y-2"
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <div>
-                                  <h5 className="font-bold text-xs text-slate-900 dark:text-white line-clamp-1">
-                                    {st.name}
-                                  </h5>
-                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
-                                    <FiMapPin size={11} className="text-blue-500" />
-                                    <span>{st.location || st.city}</span>
-                                    <span>•</span>
-                                    <span className="font-semibold text-slate-700 dark:text-slate-300">
-                                      {st.operator || 'VoltHub'}
-                                    </span>
-                                  </p>
-                                </div>
-                                <span
-                                  className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold shrink-0 ${
-                                    availCount > 0
-                                      ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
-                                      : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400'
-                                  }`}
-                                >
-                                  {availCount > 0 ? `${availCount}/${totalCount} Free` : 'Fully Occupied'}
-                                </span>
+                        {m.data.map((st) => (
+                          <div
+                            key={st.id || st.stationId}
+                            className="p-3 rounded-xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] space-y-2"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <h5 className="font-bold text-xs text-[var(--text-primary)] line-clamp-1">
+                                  {st.name}
+                                </h5>
+                                <p className="text-[10px] text-[var(--text-secondary)] flex items-center gap-1 mt-0.5">
+                                  <FiMapPin size={11} className="text-blue-500" />
+                                  <span>{st.address || st.city}</span>
+                                </p>
                               </div>
-
-                              {/* Chargers breakdown */}
-                              <div className="flex flex-wrap gap-1">
-                                {st.chargers?.slice(0, 3).map((chg, cIdx) => (
-                                  <span
-                                    key={cIdx}
-                                    className="text-[9px] px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-mono"
-                                  >
-                                    ⚡ {chg.connector} {chg.powerKw}kW (₹{chg.pricePerKwh}/kWh)
-                                  </span>
-                                ))}
-                              </div>
-
-                              {/* Interactive Actions */}
-                              <div className="flex items-center gap-2 pt-1">
-                                <button
-                                  onClick={() => {
-                                    setIsOpen(false);
-                                    navigate(`/customer/book?stationId=${st.id}`);
-                                  }}
-                                  className="flex-1 py-1.5 px-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] flex items-center justify-center gap-1 transition cursor-pointer shadow-xs"
-                                >
-                                  <FiZap size={11} />
-                                  <span>Book Slot</span>
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setIsOpen(false);
-                                    navigate(`/customer/stations/${st.id}`);
-                                  }}
-                                  className="py-1.5 px-2.5 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold text-[10px] transition cursor-pointer"
-                                >
-                                  Details
-                                </button>
-                              </div>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold shrink-0 ${
+                                  st.availableChargers > 0
+                                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                                    : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+                                }`}
+                              >
+                                {st.availableChargers > 0 ? `${st.availableChargers} Free` : 'Occupied'}
+                              </span>
                             </div>
-                          );
-                        })}
+
+                            <div className="flex items-center justify-between text-[10px] font-mono text-[var(--text-secondary)]">
+                              <span>⚡ Max {st.maxPowerKw || 60} kW</span>
+                              <span>₹{st.tariffPerKwh || 18}/kWh</span>
+                            </div>
+
+                            <div className="flex items-center gap-2 pt-1">
+                              <button
+                                onClick={() => {
+                                  setIsOpen(false);
+                                  navigate(`/customer/book?stationId=${st.id || st.stationId}`);
+                                }}
+                                className="flex-1 py-1.5 px-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] flex items-center justify-center gap-1 transition cursor-pointer"
+                              >
+                                <FiZap size={11} />
+                                <span>Book Slot</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setIsOpen(false);
+                                  navigate(`/dashboard`);
+                                }}
+                                className="py-1.5 px-2.5 rounded-lg bg-[var(--bg-surface)] hover:bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[var(--text-primary)] font-semibold text-[10px] transition cursor-pointer"
+                              >
+                                View Map
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
 
@@ -550,38 +518,37 @@ export default function VoltBotChatbot() {
                     {/* RICH CARD: REAL-TIME BOOKING TRACKING                */}
                     {/* ==================================================== */}
                     {m.type === 'booking_card' && m.data && (
-                      <div className="mt-3 p-3.5 rounded-xl bg-slate-50 dark:bg-[#0B1530] border border-blue-200 dark:border-blue-900/60 space-y-2.5">
-                        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+                      <div className="mt-3 p-3.5 rounded-xl bg-[var(--bg-surface-raised)] border border-blue-500/30 space-y-2.5">
+                        <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2">
                           <div className="flex items-center gap-1.5">
                             <span className="font-mono font-bold text-xs text-blue-600 dark:text-blue-400">
                               {m.data.bookingId}
                             </span>
                             <button
                               onClick={() => handleCopy(m.data.bookingId, m.data.bookingId)}
-                              className="text-slate-400 hover:text-blue-500"
+                              className="text-[var(--text-muted)] hover:text-blue-500 cursor-pointer"
                               title="Copy Booking ID"
                             >
                               {copiedId === m.data.bookingId ? <FiCheck size={12} className="text-emerald-500" /> : <FiCopy size={12} />}
                             </button>
                           </div>
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800">
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
                             {m.data.status || 'Confirmed'}
                           </span>
                         </div>
 
                         <div className="space-y-1 text-[11px]">
-                          <p className="font-semibold text-slate-900 dark:text-white line-clamp-1">
-                            📍 {m.data.stationName || 'VoltHub Station'}
+                          <p className="font-semibold text-[var(--text-primary)] line-clamp-1">
+                            📍 {m.data.stationName || 'VoltCharge Hub'}
                           </p>
-                          <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400 text-[10px]">
+                          <div className="flex items-center gap-3 text-[var(--text-secondary)] text-[10px]">
                             <span>📅 {m.data.date}</span>
-                            <span>⏰ {m.data.time}</span>
-                            <span>⏳ {m.data.duration}</span>
+                            <span>⏰ {m.data.timeSlot || m.data.startTime}</span>
                           </div>
-                          <div className="flex items-center justify-between text-[10px] text-slate-600 dark:text-slate-300 pt-1">
-                            <span>Vehicle: <b>{m.data.vehicleModel || m.data.vehicleNumber || 'Tata Nexon EV'}</b></span>
-                            <span className="font-mono font-bold text-blue-600 dark:text-cyan-400">
-                              ₹{m.data.totalAmount || '238.10'} ({m.data.paymentStatus || 'Paid'})
+                          <div className="flex items-center justify-between text-[10px] text-[var(--text-secondary)] pt-1">
+                            <span>Vehicle: <b>{m.data.vehicleModel || 'EV'}</b></span>
+                            <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                              ₹{parseFloat(m.data.estimatedAmount || 0).toFixed(2)} ({m.data.paymentStatus || 'PAID'})
                             </span>
                           </div>
                         </div>
@@ -590,134 +557,148 @@ export default function VoltBotChatbot() {
                           <button
                             onClick={() => {
                               setIsOpen(false);
-                              navigate(`/booking/verify/${m.data.bookingId}`);
+                              navigate(`/my-bookings`);
                             }}
                             className="flex-1 py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center justify-center gap-1 transition cursor-pointer"
                           >
                             <FiCheckCircle size={12} />
-                            <span>View Digital QR Pass</span>
+                            <span>View My Bookings</span>
                           </button>
-                          <button
-                            onClick={() => {
-                              setIsOpen(false);
-                              navigate(`/customer/bookings`);
-                            }}
-                            className="py-1.5 px-2.5 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-[10px] font-semibold"
-                          >
-                            All Bookings
-                          </button>
+                          {['CHECKED_IN', 'IN_PROGRESS', 'CHARGING', 'ACTIVE'].includes(m.data.status) && (
+                            <button
+                              onClick={() => {
+                                setIsOpen(false);
+                                navigate(`/sessions/${m.data.bookingId}`);
+                              }}
+                              className="py-1.5 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] transition cursor-pointer"
+                            >
+                              Live Charging
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
 
                     {/* ==================================================== */}
-                    {/* RICH CARD: TARIFF & TIME ESTIMATOR                   */}
+                    {/* RICH CARD: LIVE CHARGING TELEMETRY                   */}
                     {/* ==================================================== */}
-                    {m.type === 'tariff_calculator' && m.data && (
-                      <div className="mt-3 p-3.5 rounded-xl bg-slate-50 dark:bg-[#0B1530] border border-cyan-300 dark:border-cyan-900/60 space-y-2.5">
-                        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
-                          <span className="font-bold text-xs text-slate-900 dark:text-white">
-                            ⚡ {m.data.vehicleName}
+                    {m.type === 'charging_card' && m.data && (
+                      <div className="mt-3 p-3.5 rounded-xl bg-[var(--bg-surface-raised)] border border-emerald-500/40 space-y-2.5">
+                        <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2">
+                          <span className="font-bold text-xs text-[var(--text-primary)] flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                            Live Charging Telemetry
                           </span>
-                          <span className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400 font-bold">
-                            {m.data.batteryKwh} kWh Pack
+                          <span className="font-mono font-bold text-emerald-500 text-xs">
+                            {m.data.currentSoc}% → {m.data.targetSoc}%
                           </span>
                         </div>
 
-                        {/* Battery calculation range */}
-                        <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] space-y-1">
-                          <div className="flex justify-between font-semibold">
-                            <span>Charge Range: {m.data.startPct}% → {m.data.targetPct}%</span>
-                            <span className="text-blue-600 dark:text-blue-400">+{m.data.energyNeededKwh} kWh</span>
-                          </div>
-                          <div className="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden flex">
-                            <div style={{ width: `${m.data.startPct}%` }} className="bg-amber-400 h-full" />
-                            <div style={{ width: `${m.data.targetPct - m.data.startPct}%` }} className="bg-emerald-500 h-full animate-pulse" />
-                          </div>
+                        {/* SOC Progress Bar */}
+                        <div className="w-full bg-[var(--bg-surface)] h-2 rounded-full overflow-hidden border border-[var(--border-subtle)]">
+                          <div
+                            style={{ width: `${Math.min(100, m.data.currentSoc || 50)}%` }}
+                            className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 animate-pulse"
+                          />
                         </div>
 
-                        {/* Charging times comparison */}
-                        <div className="grid grid-cols-2 gap-2 text-[10px]">
-                          <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900">
-                            <span className="text-slate-500 dark:text-slate-400 block">50kW DC Fast</span>
-                            <span className="font-bold text-blue-600 dark:text-blue-400 text-xs">
-                              ~{m.data.fastTimeMins} mins
-                            </span>
-                          </div>
-                          <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                            <span className="text-slate-500 dark:text-slate-400 block">7.2kW AC Wallbox</span>
-                            <span className="font-bold text-slate-700 dark:text-slate-300 text-xs">
-                              ~{(m.data.acTimeMins / 60).toFixed(1)} hrs
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Price breakdown */}
-                        <div className="pt-1 text-[10px] space-y-0.5 text-slate-600 dark:text-slate-300">
-                          <div className="flex justify-between">
-                            <span>Base Energy ({m.data.energyNeededKwh} kWh @ ₹{m.data.ratePerKwh})</span>
-                            <span>₹{m.data.baseAmount}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Platform Service Fee</span>
-                            <span>₹{m.data.serviceFee}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>18% GST</span>
-                            <span>₹{m.data.tax}</span>
-                          </div>
-                          <div className="flex justify-between font-bold text-xs text-slate-900 dark:text-white pt-1 border-t border-slate-200 dark:border-slate-800">
-                            <span>Estimated Total</span>
-                            <span className="text-emerald-600 dark:text-emerald-400 font-mono">₹{m.data.totalCost}</span>
-                          </div>
+                        <div className="grid grid-cols-2 gap-2 text-[10px] text-[var(--text-secondary)]">
+                          <div>Power: <b className="text-[var(--text-primary)]">{m.data.powerKw} kW</b></div>
+                          <div>Energy: <b className="text-[var(--text-primary)]">{m.data.energyKwh} kWh</b></div>
+                          <div>Voltage: <b className="text-[var(--text-primary)]">{m.data.voltage} V</b></div>
+                          <div>Duration: <b className="text-[var(--text-primary)]">{m.data.durationMinutes} min</b></div>
                         </div>
 
                         <button
                           onClick={() => {
                             setIsOpen(false);
-                            navigate('/customer/book');
+                            navigate(`/sessions/${m.data.bookingId || m.data.sessionId}`);
                           }}
-                          className="w-full py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold text-[10px] flex items-center justify-center gap-1 transition cursor-pointer"
+                          className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center justify-center gap-1 transition cursor-pointer"
                         >
                           <FiZap size={12} />
-                          <span>Reserve Charging Bay at this Rate</span>
+                          <span>Open Live Charging Dashboard</span>
                         </button>
                       </div>
                     )}
 
                     {/* ==================================================== */}
-                    {/* RICH CARD: EMERGENCY RESCUE PROTOCOL                 */}
+                    {/* RICH CARD: COST CALCULATION BREAKDOWN                */}
                     {/* ==================================================== */}
-                    {m.type === 'emergency_card' && m.data && (
-                      <div className="mt-3 p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-900 space-y-2.5 text-slate-900 dark:text-white">
-                        <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 font-bold text-xs">
-                          <FiAlertTriangle size={16} />
-                          <span>Immediate Safe Actions Required</span>
+                    {m.type === 'cost_estimate' && m.data && (
+                      <div className="mt-3 p-3.5 rounded-xl bg-[var(--bg-surface-raised)] border border-cyan-500/30 space-y-2 text-[11px]">
+                        <div className="flex justify-between font-bold text-xs text-[var(--text-primary)] border-b border-[var(--border-subtle)] pb-1.5">
+                          <span>Battery Capacity:</span>
+                          <span className="font-mono text-cyan-500">{m.data.batteryCapacityKwh} kWh</span>
                         </div>
+                        <div className="space-y-1 text-[10px] text-[var(--text-secondary)]">
+                          <div className="flex justify-between">
+                            <span>Energy Required:</span>
+                            <span>{m.data.energyRequiredKwh} kWh</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Base Rate:</span>
+                            <span>₹{m.data.tariffPerKwh}/kWh</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Energy Cost:</span>
+                            <span>₹{m.data.energyCost?.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Platform Fee:</span>
+                            <span>₹{m.data.platformFee?.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>GST (18%):</span>
+                            <span>₹{m.data.gstTax?.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between font-black text-xs text-[var(--text-primary)] pt-1 border-t border-[var(--border-subtle)]">
+                            <span>Total Estimated Cost:</span>
+                            <span className="text-emerald-500 font-mono">₹{m.data.totalEstimatedAmount?.toFixed(2)}</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setIsOpen(false);
+                            navigate('/customer/book');
+                          }}
+                          className="w-full py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] flex items-center justify-center gap-1 transition cursor-pointer"
+                        >
+                          <FiZap size={11} />
+                          <span>Book Slot at this Rate</span>
+                        </button>
+                      </div>
+                    )}
 
-                        <div className="space-y-1.5 text-[11px] text-slate-700 dark:text-slate-300 leading-normal">
-                          {m.data.steps?.map((step, sIdx) => (
-                            <div key={sIdx} className="bg-white/80 dark:bg-slate-900/80 p-2 rounded-lg border border-rose-200 dark:border-rose-900/60">
-                              {renderFormattedText(step)}
+                    {/* ==================================================== */}
+                    {/* RICH CARD: EMERGENCY SAFETY & STUCK CONNECTOR        */}
+                    {/* ==================================================== */}
+                    {m.type === 'emergency_guide' && m.data && (
+                      <div className="mt-3 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/40 space-y-2 text-xs">
+                        <div className="flex items-center gap-2 text-rose-500 font-bold">
+                          <FiAlertTriangle size={15} />
+                          <span>Safety & Manual Release Guide</span>
+                        </div>
+                        <div className="space-y-1 text-[10px] text-[var(--text-secondary)] leading-normal">
+                          {m.data.safetyProtocol?.map((step, sIdx) => (
+                            <div key={sIdx} className="bg-[var(--bg-surface)] p-1.5 rounded border border-[var(--border-subtle)]">
+                              {step}
                             </div>
                           ))}
                         </div>
-
-                        <div className="flex items-center gap-2 pt-1">
-                          <a
-                            href={`tel:${m.data.hotline}`}
-                            className="flex-1 py-2 px-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-rose-600/30 transition text-center"
-                          >
-                            <FiPhone size={14} className="animate-bounce" />
-                            <span>Call SOS Hotline: {m.data.hotline}</span>
-                          </a>
-                        </div>
+                        <a
+                          href="tel:18008898658"
+                          className="w-full py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] flex items-center justify-center gap-1.5 transition text-center"
+                        >
+                          <FiPhone size={13} className="animate-bounce" />
+                          <span>Call 24x7 SOS Hotline: {m.data.emergencyHotline}</span>
+                        </a>
                       </div>
                     )}
                   </div>
 
-                  {/* Message Timestamp */}
-                  <span className="text-[9px] text-slate-400 dark:text-slate-500 mt-1 px-1 font-mono">
+                  {/* Timestamp */}
+                  <span className="text-[9px] text-[var(--text-muted)] mt-1 px-1 font-mono">
                     {m.time}
                   </span>
 
@@ -728,7 +709,7 @@ export default function VoltBotChatbot() {
                         <button
                           key={sIdx}
                           onClick={() => handleSend(sug)}
-                          className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-600 hover:text-white text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900/70 transition-all cursor-pointer shadow-2xs"
+                          className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-500/10 hover:bg-blue-600 hover:text-white text-blue-600 dark:text-blue-400 border border-blue-500/30 transition-all cursor-pointer"
                         >
                           {sug}
                         </button>
@@ -740,37 +721,37 @@ export default function VoltBotChatbot() {
 
               {/* Typing indicator */}
               {isTyping && (
-                <div className="flex items-center gap-2 text-xs text-slate-400 bg-white dark:bg-[#0F1B38] p-3 rounded-2xl border border-slate-200 dark:border-blue-900/40 w-36 shadow-xs">
+                <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)] bg-[var(--bg-surface)] p-3 rounded-2xl border border-[var(--border-subtle)] w-60 shadow-xs">
                   <span className="w-2 h-2 rounded-full bg-blue-600 animate-bounce" />
                   <span className="w-2 h-2 rounded-full bg-cyan-500 animate-bounce delay-100" />
                   <span className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce delay-200" />
-                  <span className="text-[10px] font-mono text-slate-400">Checking...</span>
+                  <span className="text-[10px] font-mono">Querying EV Database...</span>
                 </div>
               )}
 
               <div ref={messagesEndRef} />
             </div>
 
-            {/* 4. QUICK ACTION CHIPS HORIZONTAL SCROLLER */}
-            <div className="px-3 py-2 bg-white dark:bg-[#091124] border-t border-slate-200 dark:border-slate-800 flex gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+            {/* 3. QUICK ACTION CHIPS HORIZONTAL SCROLLER */}
+            <div className="px-3 py-2 bg-[var(--bg-surface)] border-t border-[var(--border-subtle)] flex gap-1.5 overflow-x-auto no-scrollbar shrink-0">
               {QUICK_ACTIONS.map((action) => (
                 <button
                   key={action.id}
                   onClick={() => handleSend(action.prompt)}
-                  className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800/80 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-600 border border-slate-200 dark:border-slate-700 rounded-full text-[10px] text-slate-700 dark:text-slate-300 font-bold whitespace-nowrap transition cursor-pointer"
+                  className="px-2.5 py-1 bg-[var(--bg-surface-raised)] hover:bg-blue-600 hover:text-white border border-[var(--border-subtle)] rounded-full text-[10px] text-[var(--text-secondary)] hover:text-white font-bold whitespace-nowrap transition cursor-pointer"
                 >
                   {action.label}
                 </button>
               ))}
             </div>
 
-            {/* 5. INPUT & VOICE CONTROLS */}
+            {/* 4. INPUT & VOICE CONTROLS */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 handleSend();
               }}
-              className="p-3 bg-white dark:bg-[#091124] border-t border-slate-200 dark:border-slate-800 flex items-center gap-2 shrink-0"
+              className="p-3 bg-[var(--bg-surface)] border-t border-[var(--border-subtle)] flex items-center gap-2 shrink-0"
             >
               {/* Voice Speech-To-Text Button */}
               <button
@@ -779,7 +760,7 @@ export default function VoltBotChatbot() {
                 className={`w-10 h-10 rounded-2xl flex items-center justify-center transition cursor-pointer ${
                   isListening
                     ? 'bg-rose-500 text-white animate-pulse shadow-md shadow-rose-500/40'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    : 'bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]'
                 }`}
                 title={isListening ? 'Listening... click to stop' : 'Voice Input (Hands-free)'}
               >
@@ -791,8 +772,8 @@ export default function VoltBotChatbot() {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={isListening ? 'Listening to your voice...' : 'Ask VoltBot (e.g., Check slots in Chennai)...'}
-                className="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-blue-500 font-medium"
+                placeholder={isListening ? 'Listening to your voice...' : 'Ask VoltBot (e.g., Track booking EV000053)...'}
+                className="theme-input flex-1 px-3.5 py-2.5 rounded-2xl text-xs"
               />
 
               {/* Submit Send Button */}

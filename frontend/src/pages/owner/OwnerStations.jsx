@@ -16,6 +16,13 @@ import {
   Sparkles,
   X,
   Layers,
+  Compass,
+  DollarSign,
+  Coffee,
+  Shield,
+  Wifi,
+  LocateFixed,
+  Car,
 } from "lucide-react";
 import {
   getOwnerStations,
@@ -23,6 +30,7 @@ import {
   updateOwnerStation,
   deleteOwnerStation,
 } from "../../services/ownerService";
+import LocationPickerMap from "../../components/LocationPickerMap";
 
 export default function OwnerStations() {
   const [stations, setStations] = useState([]);
@@ -45,11 +53,26 @@ export default function OwnerStations() {
     openingTime: "06:00 AM",
     closingTime: "11:00 PM",
     stationType: "Public",
-    parkingCapacity: 8,
+    parkingCapacity: 4,
+    totalSlots: 4,
+    acChargersCount: 2,
+    dcFastChargersCount: 2,
+    chargingRatePerKwh: 18.0,
     maxPowerKw: 150,
     description: "High-speed multi-standard EV charging hub.",
-    amenities: ["WiFi", "Restrooms", "Cafe"],
+    amenities: ["WiFi", "Restrooms", "Cafe", "Waiting Lounge"],
   });
+
+  const availableAmenitiesList = [
+    "WiFi",
+    "Restrooms",
+    "Cafe",
+    "Waiting Lounge",
+    "EV Parking",
+    "Security Camera",
+    "Wheelchair Accessible",
+    "24/7 Security",
+  ];
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -78,14 +101,56 @@ export default function OwnerStations() {
     setFormData((prev) => ({
       ...prev,
       [name]:
-        name === "latitude" || name === "longitude" || name === "maxPowerKw" || name === "parkingCapacity"
+        name === "latitude" ||
+        name === "longitude" ||
+        name === "maxPowerKw" ||
+        name === "parkingCapacity" ||
+        name === "totalSlots" ||
+        name === "acChargersCount" ||
+        name === "dcFastChargersCount" ||
+        name === "chargingRatePerKwh"
           ? Number(value)
           : value,
     }));
   };
 
+  const handleAmenityToggle = (amenity) => {
+    setFormData((prev) => {
+      const current = Array.isArray(prev.amenities) ? prev.amenities : [];
+      if (current.includes(amenity)) {
+        return { ...prev, amenities: current.filter((a) => a !== amenity) };
+      }
+      return { ...prev, amenities: [...current, amenity] };
+    });
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setFormData((prev) => ({
+            ...prev,
+            latitude: parseFloat(pos.coords.latitude.toFixed(6)),
+            longitude: parseFloat(pos.coords.longitude.toFixed(6)),
+          }));
+          showToast("GPS coordinates updated to current location!");
+        },
+        (err) => {
+          showToast("Could not access GPS location: " + err.message);
+        }
+      );
+    } else {
+      showToast("Geolocation is not supported by your browser");
+    }
+  };
+
   const handleCreateOrUpdate = async (e) => {
     e.preventDefault();
+    if (!formData.stationName.trim() || !formData.address.trim()) {
+      showToast("Please provide Station Name and Address.");
+      return;
+    }
+
     setSubmitting(true);
     try {
       if (editingStation) {
@@ -93,7 +158,7 @@ export default function OwnerStations() {
         showToast(`Station ${editingStation.stationId || editingStation.id} updated!`);
       } else {
         const res = await createOwnerStation(formData);
-        showToast(`Station commissioned! ID: ${res.data?.stationId || res.data?.id || "STN"}`);
+        showToast(`Station commissioned successfully! ID: ${res.data?.stationId || res.data?.id || "STN"}`);
       }
       setShowAddModal(false);
       setEditingStation(null);
@@ -109,7 +174,7 @@ export default function OwnerStations() {
     if (!window.confirm(`Are you sure you want to deactivate station ${stationId}?`)) return;
     try {
       await deleteOwnerStation(stationId);
-      showToast(`Station ${stationId} deactivated.`);
+      showToast(`Station ${stationId} status updated.`);
       loadData();
     } catch (err) {
       showToast("Error: " + err.message);
@@ -124,16 +189,20 @@ export default function OwnerStations() {
       city: st.city || "Chennai",
       state: st.state || "Tamil Nadu",
       pincode: st.pincode || "600026",
-      latitude: st.latitude || 13.0504,
-      longitude: st.longitude || 80.2096,
+      latitude: parseFloat(st.latitude) || 13.0504,
+      longitude: parseFloat(st.longitude) || 80.2096,
       contactNumber: st.contactNumber || "+91 9876543210",
       openingTime: st.openingTime || "06:00 AM",
       closingTime: st.closingTime || "11:00 PM",
       stationType: st.stationType || "Public",
-      parkingCapacity: st.parkingCapacity || st.totalSlots || 8,
+      parkingCapacity: st.parkingCapacity || st.totalSlots || 4,
+      totalSlots: st.totalSlots || st.parkingCapacity || 4,
+      acChargersCount: 2,
+      dcFastChargersCount: 2,
+      chargingRatePerKwh: parseFloat(st.pricePerKwh || st.energy_tariff_per_kwh) || 18.0,
       maxPowerKw: st.maxPowerKw || st.maxPower || 150,
-      description: st.description || "",
-      amenities: st.amenities || ["WiFi", "Restrooms"],
+      description: st.description || "High-speed multi-standard EV charging hub.",
+      amenities: Array.isArray(st.amenities) ? st.amenities : ["WiFi", "Restrooms", "Cafe"],
     });
     setShowAddModal(true);
   };
@@ -169,7 +238,7 @@ export default function OwnerStations() {
             Station Management
           </h1>
           <p className="text-xs text-[var(--text-muted)] mt-1">
-            Manage EV charging hubs, GPS coordinates, power capacity limits, and operating hours in MySQL.
+            Commission EV charging hubs, pinpoint GPS coordinates with live map, set pricing tariffs, and manage charger bays.
           </p>
         </div>
 
@@ -196,10 +265,14 @@ export default function OwnerStations() {
                 openingTime: "06:00 AM",
                 closingTime: "11:00 PM",
                 stationType: "Public",
-                parkingCapacity: 8,
+                parkingCapacity: 4,
+                totalSlots: 4,
+                acChargersCount: 2,
+                dcFastChargersCount: 2,
+                chargingRatePerKwh: 18.0,
                 maxPowerKw: 150,
                 description: "High-speed multi-standard EV charging hub.",
-                amenities: ["WiFi", "Restrooms", "Cafe"],
+                amenities: ["WiFi", "Restrooms", "Cafe", "Waiting Lounge"],
               });
               setShowAddModal(true);
             }}
@@ -297,18 +370,18 @@ export default function OwnerStations() {
                     <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono text-sm">{st.availableChargers || st.available_slots || 4}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] text-[var(--text-muted)] uppercase font-bold">Capacity</div>
-                    <div className="font-bold text-amber-600 dark:text-amber-400 font-mono text-sm">{st.maxPowerKw || st.max_power || 150} kW</div>
+                    <div className="text-[10px] text-[var(--text-muted)] uppercase font-bold">Rate</div>
+                    <div className="font-bold text-amber-600 dark:text-amber-400 font-mono text-sm">₹{st.pricePerKwh || 18}/kWh</div>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-between text-xs text-[var(--text-muted)] mb-2 px-1">
                   <div className="flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5" />
-                    <span>{st.openingHours || `${st.openingTime || st.opening_time || "06:00"} - ${st.closingTime || st.closing_time || "23:00"}`}</span>
+                    <span>{st.openingHours || `${st.openingTime || st.opening_time || "06:00 AM"} - ${st.closingTime || st.closing_time || "11:00 PM"}`}</span>
                   </div>
                   <div>
-                    <span>Parking: <strong className="text-[var(--text-primary)] font-mono">{st.parkingCapacity || st.total_slots || 6} bays</strong></span>
+                    <span>Power: <strong className="text-[var(--text-primary)] font-mono">{st.maxPowerKw || st.max_power || 150} kW</strong></span>
                   </div>
                 </div>
               </div>
@@ -341,15 +414,18 @@ export default function OwnerStations() {
         </div>
       )}
 
-      {/* Add / Edit Station Modal */}
+      {/* Add / Edit Station Comprehensive Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-3xl max-w-2xl w-full p-6 shadow-2xl animate-fade-in my-8 text-[var(--text-primary)]">
+          <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-3xl max-w-3xl w-full p-6 shadow-2xl animate-fade-in my-8 text-[var(--text-primary)] max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)] mb-5">
-              <h2 className="text-base font-bold text-[var(--text-primary)] flex items-center gap-2 font-mono">
-                <Building2 className="w-5 h-5 text-[var(--accent-primary)]" />
-                {editingStation ? `Edit Station ${editingStation.stationId || editingStation.id}` : "Commission New EV Station (MySQL)"}
-              </h2>
+              <div>
+                <h2 className="text-base font-bold text-[var(--text-primary)] flex items-center gap-2 font-mono">
+                  <Building2 className="w-5 h-5 text-[var(--accent-primary)]" />
+                  {editingStation ? `Edit Station ${editingStation.stationId || editingStation.id}` : "Commission New EV Charging Station (MySQL)"}
+                </h2>
+                <p className="text-[11px] text-[var(--text-muted)]">Configure station details, map location pin, charging rate, and amenities.</p>
+              </div>
               <button
                 onClick={() => setShowAddModal(false)}
                 className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)]"
@@ -359,6 +435,7 @@ export default function OwnerStations() {
             </div>
 
             <form onSubmit={handleCreateOrUpdate} className="space-y-4">
+              {/* Section 1: Basic Info */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Station Name *</label>
@@ -398,6 +475,17 @@ export default function OwnerStations() {
                 </div>
 
                 <div>
+                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">State</label>
+                  <input
+                    type="text"
+                    name="state"
+                    value={formData.state}
+                    onChange={handleInputChange}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-primary)] focus:outline-none"
+                  />
+                </div>
+
+                <div>
                   <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Pincode</label>
                   <input
                     type="text"
@@ -409,55 +497,166 @@ export default function OwnerStations() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">GPS Latitude *</label>
+                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Contact Number</label>
+                  <input
+                    type="text"
+                    name="contactNumber"
+                    value={formData.contactNumber}
+                    onChange={handleInputChange}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-primary)] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Section 2: Interactive Location Map Picker */}
+              <div className="p-4 rounded-2xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[var(--text-primary)] flex items-center gap-1.5 font-mono">
+                    <MapPin size={14} className="text-red-500" /> SELECT LOCATION ON INTERACTIVE MAP
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleUseCurrentLocation}
+                    className="text-[11px] font-bold text-[var(--accent-primary)] hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <LocateFixed size={12} /> Use My Current GPS Location
+                  </button>
+                </div>
+
+                <LocationPickerMap
+                  latitude={formData.latitude}
+                  longitude={formData.longitude}
+                  onLocationChange={(newLat, newLng, foundAddress, addrObj) => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      latitude: newLat,
+                      longitude: newLng,
+                      address: foundAddress ? foundAddress : prev.address,
+                      city: addrObj?.city || addrObj?.town || addrObj?.state_district || prev.city,
+                      state: addrObj?.state || prev.state,
+                      pincode: addrObj?.postcode || prev.pincode,
+                    }));
+                  }}
+                />
+
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-0.5">Latitude</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      name="latitude"
+                      value={formData.latitude}
+                      onChange={handleInputChange}
+                      className="w-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg px-2.5 py-1.5 text-xs font-mono"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-0.5">Longitude</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      name="longitude"
+                      value={formData.longitude}
+                      onChange={handleInputChange}
+                      className="w-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg px-2.5 py-1.5 text-xs font-mono"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3: Technical Chargers & Power Config */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Total Charging Points</label>
                   <input
                     type="number"
-                    step="0.0001"
-                    name="latitude"
-                    value={formData.latitude}
+                    name="totalSlots"
+                    value={formData.totalSlots}
                     onChange={handleInputChange}
-                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-primary)] font-mono focus:outline-none"
-                    required
+                    min={1}
+                    max={20}
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">GPS Longitude *</label>
+                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Rate (₹ / kWh)</label>
                   <input
                     type="number"
-                    step="0.0001"
-                    name="longitude"
-                    value={formData.longitude}
+                    step="0.5"
+                    name="chargingRatePerKwh"
+                    value={formData.chargingRatePerKwh}
                     onChange={handleInputChange}
-                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-primary)] font-mono focus:outline-none"
-                    required
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Grid Power Capacity (kW)</label>
+                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Max Power (kW)</label>
                   <input
                     type="number"
                     name="maxPowerKw"
                     value={formData.maxPowerKw}
                     onChange={handleInputChange}
-                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-primary)] font-mono focus:outline-none"
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Parking Bays</label>
+                  <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Opening Time</label>
                   <input
-                    type="number"
-                    name="parkingCapacity"
-                    value={formData.parkingCapacity}
+                    type="text"
+                    name="openingTime"
+                    value={formData.openingTime}
                     onChange={handleInputChange}
-                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2.5 text-xs text-[var(--text-primary)] font-mono focus:outline-none"
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs"
                   />
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[var(--border-subtle)] mt-6">
+              {/* Section 4: Available Amenities */}
+              <div>
+                <label className="block text-xs font-bold text-[var(--text-muted)] mb-2">Available Facilities / Amenities</label>
+                <div className="flex flex-wrap gap-2">
+                  {availableAmenitiesList.map((amenity) => {
+                    const isSelected = formData.amenities?.includes(amenity);
+                    return (
+                      <button
+                        key={amenity}
+                        type="button"
+                        onClick={() => handleAmenityToggle(amenity)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer border ${
+                          isSelected
+                            ? "bg-blue-500/20 text-[var(--accent-primary)] border-blue-500/40"
+                            : "bg-[var(--bg-surface-raised)] text-[var(--text-muted)] border-[var(--border-subtle)]"
+                        }`}
+                      >
+                        {isSelected ? "✓ " : "+ "}
+                        {amenity}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Station Description</label>
+                <textarea
+                  name="description"
+                  value={formData.description}
+                  onChange={handleInputChange}
+                  rows={2}
+                  className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3.5 py-2 text-xs text-[var(--text-primary)] focus:outline-none"
+                  placeholder="Describe your station amenities, security, fast chargers, etc."
+                />
+              </div>
+
+              {/* Submit Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[var(--border-subtle)] mt-4">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
@@ -470,7 +669,7 @@ export default function OwnerStations() {
                   disabled={submitting}
                   className="px-5 py-2.5 rounded-xl bg-[var(--accent-primary)] hover:opacity-90 text-white text-xs font-bold shadow-lg shadow-blue-500/20 transition active:scale-95 disabled:opacity-50 cursor-pointer"
                 >
-                  {submitting ? "Saving to MySQL..." : editingStation ? "Save Changes" : "Commission Station"}
+                  {submitting ? "Commissioning in MySQL..." : editingStation ? "Save Changes" : "Commission Station"}
                 </button>
               </div>
             </form>

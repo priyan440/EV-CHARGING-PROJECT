@@ -5,6 +5,7 @@ import {
   DEFAULT_PRICING_RULE,
   normalizeTimeString,
 } from "../utils/pricingCalculator.js";
+import { emitStationUpdated } from "../services/socketService.js";
 
 // In-memory cache for Open Charge Map API (15-min TTL)
 let ocmCache = { data: null, timestamp: 0 };
@@ -783,7 +784,7 @@ export const createStation = async (req, res) => {
 export const updateStation = async (req, res) => {
   try {
     const stationId = parseStationId(req.params.id);
-    const { name, stationName, address, contactNumber, maxPower, status } = req.body;
+    const { name, stationName, address, city, state, pincode, latitude, longitude, contactNumber, maxPower, status } = req.body;
 
     const updates = [];
     const params = [];
@@ -795,6 +796,26 @@ export const updateStation = async (req, res) => {
     if (address) {
       updates.push("address = ?");
       params.push(address);
+    }
+    if (city) {
+      updates.push("city = ?");
+      params.push(city);
+    }
+    if (state) {
+      updates.push("state = ?");
+      params.push(state);
+    }
+    if (pincode) {
+      updates.push("pincode = ?");
+      params.push(pincode);
+    }
+    if (latitude !== undefined && latitude !== null && !isNaN(parseFloat(latitude))) {
+      updates.push("latitude = ?");
+      params.push(parseFloat(latitude));
+    }
+    if (longitude !== undefined && longitude !== null && !isNaN(parseFloat(longitude))) {
+      updates.push("longitude = ?");
+      params.push(parseFloat(longitude));
     }
     if (contactNumber) {
       updates.push("contact_number = ?");
@@ -814,7 +835,16 @@ export const updateStation = async (req, res) => {
       await query(`UPDATE stations SET ${updates.join(", ")} WHERE id = ?`, params);
     }
 
-    res.json({ success: true, message: "Station updated successfully." });
+    const rows = await query("SELECT * FROM stations WHERE id = ?", [stationId]);
+    const updated = rows[0];
+
+    try {
+      if (updated) emitStationUpdated(updated);
+    } catch (sockErr) {
+      console.warn("Socket broadcast error:", sockErr.message);
+    }
+
+    res.json({ success: true, message: "Station updated successfully.", data: updated });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error updating station", error: error.message });
   }

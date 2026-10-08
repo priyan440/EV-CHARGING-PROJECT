@@ -26,6 +26,8 @@ import securityRoutes from "./routes/securityRoutes.js";
 import smartReservationRoutes from "./routes/smartReservationRoutes.js";
 import chargingRoutes from "./routes/chargingRoutes.js";
 import technicianRoutes from "./routes/technicianRoutes.js";
+import emergencyRoutes from "./routes/emergencyRoutes.js";
+import aiRoutes from "./routes/aiRoutes.js";
 import { getExternalStations } from "./controllers/stationController.js";
 
 import http from "http";
@@ -198,6 +200,9 @@ app.use("/api/battery", batteryRoutes);
 app.use("/api/batteries", batteryRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/wallets", walletRoutes);
+app.use("/api/emergency", emergencyRoutes);
+app.use("/api/emergency-requests", emergencyRoutes);
+app.use("/api/ai", aiRoutes);
 
 import { registerCustomer } from "./controllers/authController.js";
 app.post("/api/customers/register", registerCustomer);

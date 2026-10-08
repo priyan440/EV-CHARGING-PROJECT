@@ -354,10 +354,19 @@ export const getChargerTimeline = async (req, res) => {
     const isMaintenance = ["MAINTENANCE", "FAULTED", "OFFLINE"].includes((charger.status || "").toUpperCase());
 
     // Current time in minutes if date is today
+    const getLocalDateStr = (d = new Date()) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    };
+
     const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
+    const todayStr = getLocalDateStr(now);
     const isToday = cleanDate === todayStr;
+    const isPastDate = cleanDate < todayStr;
     const currentMins = isToday ? now.getHours() * 60 + now.getMinutes() : 0;
+    const minStartMins = isToday ? currentMins : 0;
 
     // Station open/close in minutes (default 00:00 to 24:00)
     const openMins = 0; // 24-Hour accessible
@@ -416,10 +425,9 @@ export const getChargerTimeline = async (req, res) => {
     }
 
     // Find Earliest Available Slot that can fit the required duration
-    const minStartMins = isToday ? Math.max(openMins, currentMins + 5) : openMins;
     let earliestSlot = null;
 
-    if (!isMaintenance) {
+    if (!isMaintenance && !isPastDate) {
       for (let t = minStartMins; t + durMins <= closeMins; t += 5) {
         const slotEnd = t + durMins;
         const hasCollision = bookedIntervals.some((b) => t < b.endMinutes && slotEnd > b.startMinutes);
@@ -441,10 +449,12 @@ export const getChargerTimeline = async (req, res) => {
       }
     }
 
-    // Generate list of dynamic valid slots across the 24 hours
+    // Generate list of dynamic valid slots across the 24 hours (15-min increments)
     const availableIntervals = [];
-    if (!isMaintenance) {
-      for (let t = minStartMins; t + durMins <= closeMins; t += 15) {
+    if (!isMaintenance && !isPastDate) {
+      for (let t = 0; t + durMins <= closeMins; t += 15) {
+        if (isToday && t < minStartMins) continue;
+
         const slotEnd = t + durMins;
         const hasCollision = bookedIntervals.some((b) => t < b.endMinutes && slotEnd > b.startMinutes);
         if (!hasCollision) {
@@ -495,6 +505,196 @@ export const getChargerTimeline = async (req, res) => {
 };
 
 /**
+ * GET /api/slots/station-timeline
+ * Comprehensive multi-charger timeline grid for an entire station
+ */
+export const getStationTimeline = async (req, res) => {
+  try {
+    const {
+      stationId,
+      station_id,
+      date,
+      booking_date,
+      durationMinutes,
+      duration_minutes,
+      vehicleId,
+    } = req.query;
+
+    const sId = stationId || station_id;
+    if (!sId) {
+      return res.status(400).json({ success: false, message: "stationId is required." });
+    }
+
+    const durMins = Math.max(5, parseInt(durationMinutes || duration_minutes, 10) || 20);
+    const cleanDate = (date || booking_date || new Date().toISOString().split("T")[0]).split("T")[0];
+
+    const isStnNum = /^\d+$/.test(sId);
+    const stnRows = await query(
+      `SELECT s.*, t.base_rate_per_kwh 
+       FROM stations s
+       LEFT JOIN tariffs t ON s.id = t.station_id AND t.status = 'ACTIVE'
+       WHERE s.id = ? OR s.station_id = ? LIMIT 1`,
+      [isStnNum ? parseInt(sId, 10) : 0, String(sId)]
+    );
+
+    if (!stnRows || stnRows.length === 0) {
+      return res.status(404).json({ success: false, message: "Station not found." });
+    }
+    const station = stnRows[0];
+
+    // Fetch chargers of this station
+    const chargers = await query(
+      `SELECT c.*, sc.id as connector_table_id, ct.connector_name
+       FROM chargers c
+       LEFT JOIN station_connectors sc ON c.id = sc.charger_id
+       LEFT JOIN connector_types ct ON sc.connector_type_id = ct.id
+       WHERE c.station_id = ?
+       ORDER BY c.id ASC`,
+      [station.id]
+    );
+
+    // Fetch active bookings for this station on this date
+    const allBookings = await query(
+      `SELECT b.id, b.booking_id, b.charger_id, b.connector_id, b.start_time, b.end_time, 
+              b.duration_minutes, b.booking_status, b.actual_charging_minutes
+       FROM bookings b
+       WHERE b.station_id = ?
+         AND b.booking_date = ?
+         AND b.booking_status NOT IN ('CANCELLED', 'EXPIRED', 'NO_SHOW')
+       ORDER BY b.start_time ASC`,
+      [station.id, cleanDate]
+    );
+
+    // Helper for local YYYY-MM-DD
+    const getLocalDateStr = (d = new Date()) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    };
+
+    const now = new Date();
+    const todayStr = getLocalDateStr(now);
+    const isToday = cleanDate === todayStr;
+    const isPastDate = cleanDate < todayStr;
+    const currentMins = isToday ? now.getHours() * 60 + now.getMinutes() : 0;
+    // For today, allow slots at or after current time (e.g. 8:00 AM when current time is 7:30 AM)
+    const minStartMins = isToday ? currentMins : 0;
+
+    let overallEarliest = null;
+    let recommendedCharger = null;
+
+    const chargerTimelines = chargers.map((c) => {
+      const cId = c.id;
+      const cBookings = allBookings.filter((b) => b.charger_id === cId || b.connector_id === cId);
+      const isMaintenance = ["MAINTENANCE", "FAULTED", "OFFLINE"].includes((c.status || "").toUpperCase());
+
+      const bookedIntervals = cBookings.map((b) => {
+        const startMins = parseTimeToMinutes(b.start_time);
+        const endMins = parseTimeToMinutes(b.end_time);
+        return {
+          id: b.id,
+          bookingId: b.booking_id || `EV${String(b.id).padStart(4, "0")}`,
+          startTime: String(b.start_time).slice(0, 5),
+          endTime: String(b.end_time).slice(0, 5),
+          startTimeFormatted: formatTime12h(b.start_time),
+          endTimeFormatted: formatTime12h(b.end_time),
+          startMinutes: startMins,
+          endMinutes: endMins,
+          durationMinutes: b.duration_minutes || (endMins - startMins),
+          status: b.booking_status, // 'CHARGING', 'CONFIRMED', etc.
+        };
+      });
+
+      // Generate dynamic available slots for this charger (15-min intervals across 24h)
+      const availableSlots = [];
+      let chargerEarliestSlot = null;
+
+      if (!isMaintenance && !isPastDate) {
+        // Generate valid charging slots across 24 hours (00:00 to 24:00)
+        for (let t = 0; t + durMins <= 1440; t += 15) {
+          const isSlotInPast = isToday && t < minStartMins;
+          if (isSlotInPast) continue;
+
+          const slotEnd = t + durMins;
+          const hasCollision = bookedIntervals.some((b) => t < b.endMinutes && slotEnd > b.startMinutes);
+          if (!hasCollision) {
+            const sTime = minutesToTimeStr(t).slice(0, 5);
+            const eTime = minutesToTimeStr(slotEnd).slice(0, 5);
+            const slotObj = {
+              startTime: sTime,
+              endTime: eTime,
+              startTimeFormatted: formatTime12h(sTime),
+              endTimeFormatted: formatTime12h(eTime),
+              startMinutes: t,
+              endMinutes: slotEnd,
+              durationMinutes: durMins,
+              label: `${formatTime12h(sTime)} - ${formatTime12h(eTime)}`,
+            };
+            availableSlots.push(slotObj);
+            if (!chargerEarliestSlot) {
+              chargerEarliestSlot = slotObj;
+            }
+          }
+        }
+      }
+
+      // Check for global earliest recommendation
+      if (chargerEarliestSlot && (!overallEarliest || chargerEarliestSlot.startMinutes < overallEarliest.startMinutes)) {
+        overallEarliest = chargerEarliestSlot;
+        recommendedCharger = {
+          chargerId: c.id,
+          chargerName: c.charger_name,
+          powerKw: parseFloat(c.power_kw) || 60,
+          chargerType: c.charger_type,
+          earliestSlot: chargerEarliestSlot,
+        };
+      }
+
+      return {
+        id: c.id,
+        chargerId: c.charger_id || `CHG${String(c.id).padStart(6, "0")}`,
+        chargerName: c.charger_name,
+        chargerType: c.charger_type,
+        connectorType: c.connector_name || (c.charger_type === "DC_FAST" ? "CCS2" : "Type 2"),
+        powerKw: parseFloat(c.power_kw) || 60.0,
+        ratePerKwh: parseFloat(station.base_rate_per_kwh || 18.0),
+        status: c.status,
+        isAvailable: c.status === "AVAILABLE" && !isMaintenance,
+        bookedIntervals,
+        availableSlots,
+        totalAvailable: availableSlots.length,
+        earliestSlot: chargerEarliestSlot,
+      };
+    });
+
+    res.json({
+      success: true,
+      station: {
+        id: station.id,
+        stationId: station.station_id,
+        stationName: station.station_name,
+        address: station.address,
+        city: station.city,
+        state: station.state,
+        phone: station.contact_number || "+91 98765 43210",
+        openingTime: station.opening_time || "Open 24 Hours",
+        ratePerKwh: parseFloat(station.base_rate_per_kwh || 18.0),
+        amenities: station.amenities ? station.amenities.split(",") : ["Restroom", "Café", "WiFi", "Waiting Area"],
+      },
+      date: cleanDate,
+      durationMinutes: durMins,
+      chargers: chargerTimelines,
+      recommendedCharger,
+      earliestAvailableTime: overallEarliest ? overallEarliest.startTimeFormatted : null,
+    });
+  } catch (error) {
+    console.error("Get Station Timeline Error:", error);
+    res.status(500).json({ success: false, message: "Error calculating station timeline", error: error.message });
+  }
+};
+
+/**
  * GET /api/slots/earliest
  * Quick lookup for earliest available slot on a charger
  */
@@ -510,5 +710,6 @@ export default {
   updateSlotStatus,
   deleteSlot,
   getChargerTimeline,
+  getStationTimeline,
   getEarliestSlot,
 };

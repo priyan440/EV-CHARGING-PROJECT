@@ -16,10 +16,124 @@ const generateNextBookingId = async (connection) => {
   return `EV${String(nextId).padStart(6, "0")}`;
 };
 
-// Helper to add minutes to HH:MM or HH:MM:SS string
+// Helper to normalize any time string (12h or 24h) to standardized 24-hour HH:MM:SS
+export const normalizeTo24Hour = (timeStr) => {
+  if (!timeStr) return "10:00:00";
+  const trimmed = String(timeStr).trim();
+  const is12h = /am|pm/i.test(trimmed);
+  if (is12h) {
+    const isPm = /pm/i.test(trimmed);
+    const clean = trimmed.replace(/am|pm/gi, "").trim();
+    const [hStr, mStr = "00"] = clean.split(":");
+    let h = parseInt(hStr, 10) || 0;
+    const m = parseInt(mStr, 10) || 0;
+    if (isPm && h < 12) h += 12;
+    if (!isPm && h === 12) h = 0;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`;
+  }
+  const parts = trimmed.split(":");
+  const h = parseInt(parts[0], 10) || 0;
+  const m = parseInt(parts[1], 10) || 0;
+  const s = parseInt(parts[2], 10) || 0;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+};
+
+// Helper to parse station operating hours into 24-hour format
+export const parseStationOperatingHours = (station) => {
+  if (!station) return { open: "00:00:00", close: "23:59:59", is24h: true, openDisplay: "00:00", closeDisplay: "23:59" };
+  const rawOpen = station.opening_time || station.openingTime || "06:00";
+  const rawClose = station.closing_time || station.closingTime || "23:00";
+  
+  if (/24/i.test(String(rawOpen)) || /24/i.test(String(rawClose))) {
+    return { open: "00:00:00", close: "23:59:59", is24h: true, openDisplay: "00:00", closeDisplay: "23:59" };
+  }
+
+  const open = normalizeTo24Hour(rawOpen);
+  const close = normalizeTo24Hour(rawClose);
+  return {
+    open,
+    close,
+    is24h: false,
+    openDisplay: open.slice(0, 5),
+    closeDisplay: close.slice(0, 5),
+  };
+};
+
+// Helper to find alternative available slots if requested time is booked
+export const findAlternativeSlots = async ({ stationId, connectorId, date, durationMinutes, operatingHours }) => {
+  try {
+    const durMins = Math.max(15, parseInt(durationMinutes, 10) || 60);
+    const cleanDate = typeof date === "string" ? date.split("T")[0] : date;
+    
+    const existingBookings = await query(
+      `SELECT start_time, end_time 
+       FROM bookings 
+       WHERE (? IS NULL OR station_id = ?) 
+         AND (connector_id = ? OR charger_id = ?) 
+         AND booking_date = ? 
+         AND booking_status IN ('PENDING_PAYMENT', 'CONFIRMED', 'PROTECTED', 'CHECKED_IN', 'ACTIVE', 'CHARGING', 'IN_PROGRESS')
+       ORDER BY start_time ASC`,
+      [stationId || null, stationId || null, connectorId, connectorId, cleanDate]
+    );
+
+    const openTime = operatingHours?.open || "06:00:00";
+    const closeTime = operatingHours?.close || "23:00:00";
+    
+    const [openH, openM] = openTime.split(":").map(Number);
+    const [closeH, closeM] = closeTime.split(":").map(Number);
+    const startDayMins = openH * 60 + openM;
+    const endDayMins = closeH * 60 + closeM;
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    let minAllowedMins = startDayMins;
+    if (cleanDate === todayStr) {
+      const now = new Date();
+      const curMins = now.getHours() * 60 + now.getMinutes();
+      minAllowedMins = Math.max(startDayMins, Math.ceil((curMins + 5) / 15) * 15);
+    }
+
+    const bookedRanges = (existingBookings || []).map(b => {
+      const [sh, sm] = String(b.start_time).split(":").map(Number);
+      const [eh, em] = String(b.end_time).split(":").map(Number);
+      return { start: sh * 60 + sm, end: eh * 60 + em };
+    });
+
+    const suggestions = [];
+    for (let slotStart = minAllowedMins; slotStart + durMins <= endDayMins; slotStart += 30) {
+      const slotEnd = slotStart + durMins;
+      const hasOverlap = bookedRanges.some(r => slotStart < r.end && slotEnd > r.start);
+      if (!hasOverlap) {
+        const sh = Math.floor(slotStart / 60);
+        const sm = slotStart % 60;
+        const eh = Math.floor(slotEnd / 60);
+        const em = slotEnd % 60;
+        
+        const startTimeStr = `${String(sh).padStart(2, "0")}:${String(sm).padStart(2, "0")}`;
+        const endTimeStr = `${String(eh).padStart(2, "0")}:${String(em).padStart(2, "0")}`;
+        
+        suggestions.push({
+          startTime: startTimeStr,
+          endTime: endTimeStr,
+          timeSlot: `${startTimeStr} - ${endTimeStr}`,
+          durationMinutes: durMins,
+        });
+
+        if (suggestions.length >= 4) break;
+      }
+    }
+
+    return suggestions;
+  } catch (err) {
+    console.warn("findAlternativeSlots notice:", err.message);
+    return [];
+  }
+};
+
+// Helper to add minutes to HH:MM or HH:MM:SS string in 24-hour format
 export const calculateEndTimeString = (startTimeStr, durationMinutes) => {
   try {
-    const parts = (startTimeStr || "10:00:00").split(":");
+    const norm = normalizeTo24Hour(startTimeStr);
+    const parts = norm.split(":");
     let hours = parseInt(parts[0], 10) || 10;
     let minutes = parseInt(parts[1], 10) || 0;
 
@@ -178,6 +292,22 @@ export const formatBooking = (b) => {
     duration: formatDurationHuman(durationMins),
     durationMinutes: durationMins,
     duration_minutes: durationMins,
+    estimatedChargingMinutes: b.estimated_charging_minutes || (b.estimated_charging_time ? parseInt(b.estimated_charging_time, 10) : Math.round(durationMins * 0.75)),
+    estimated_charging_minutes: b.estimated_charging_minutes || (b.estimated_charging_time ? parseInt(b.estimated_charging_time, 10) : Math.round(durationMins * 0.75)),
+    recommendedDurationMinutes: b.recommended_duration_minutes || durationMins,
+    recommended_duration_minutes: b.recommended_duration_minutes || durationMins,
+    safetyBufferMinutes: b.buffer_minutes || 5,
+    safety_buffer_minutes: b.buffer_minutes || 5,
+    bufferMinutes: b.buffer_minutes || 5,
+    buffer_minutes: b.buffer_minutes || 5,
+    reservedDurationMinutes: b.reserved_duration_minutes || durationMins,
+    reserved_duration_minutes: b.reserved_duration_minutes || durationMins,
+    actualChargingMinutes: b.actual_charging_minutes !== null && b.actual_charging_minutes !== undefined ? parseInt(b.actual_charging_minutes, 10) : null,
+    actual_charging_minutes: b.actual_charging_minutes !== null && b.actual_charging_minutes !== undefined ? parseInt(b.actual_charging_minutes, 10) : null,
+    actualStartTime: b.actual_start_time || null,
+    actual_start_time: b.actual_start_time || null,
+    actualEndTime: b.actual_end_time || null,
+    actual_end_time: b.actual_end_time || null,
     estimatedChargingTime: b.estimated_charging_time || `${durationMins} minutes`,
     estimated_charging_time: b.estimated_charging_time || `${durationMins} minutes`,
     
@@ -343,19 +473,39 @@ export const getAvailableConnectors = async (req, res) => {
       return res.status(400).json({ success: false, message: "Booking date cannot be in the past." });
     }
 
-    // 4. Fetch All Station Connectors
+    // 4. Fetch All Station Connectors from real chargers and charger_connectors
     let stationConnectors = await query(
-      `SELECT sc.*, ct.connector_name, ct.max_power_kw as type_max_power, ct.description as type_description
-       FROM station_connectors sc
-       JOIN connector_types ct ON sc.connector_type_id = ct.id
-       WHERE sc.station_id = ?
-       ORDER BY sc.id ASC`,
+      `SELECT 
+         COALESCE(cc.id, c.id) as id,
+         COALESCE(cc.connector_id, c.charger_id) as connector_id,
+         c.id as charger_id,
+         c.station_id,
+         c.charger_name,
+         c.charger_type,
+         COALESCE(cc.connector_type, c.charger_type, 'CCS2') as connector_name,
+         COALESCE(cc.power_kw, c.power_kw, 60.0) as power_kw,
+         CASE 
+           WHEN c.status IN ('MAINTENANCE', 'FAULTED', 'OFFLINE') THEN c.status 
+           ELSE COALESCE(cc.status, c.status, 'AVAILABLE') 
+         END as status
+       FROM chargers c
+       LEFT JOIN charger_connectors cc ON c.id = cc.charger_id
+       WHERE c.station_id = ? AND c.status != 'OFFLINE'
+       ORDER BY c.id ASC, cc.id ASC`,
       [station.id]
     );
 
-    // Empty array if no connectors exist yet for this station
+    if (!stationConnectors || stationConnectors.length === 0) {
+      stationConnectors = await query(
+        `SELECT sc.*, ct.connector_name, ct.max_power_kw as type_max_power, ct.description as type_description
+         FROM station_connectors sc
+         JOIN connector_types ct ON sc.connector_type_id = ct.id
+         WHERE sc.station_id = ?
+         ORDER BY sc.id ASC`,
+        [station.id]
+      );
+    }
     stationConnectors = stationConnectors || [];
-
 
     // 5. Query Overlapping Bookings for Station & Date
     // Overlap logic: requestedStart < existingEnd AND requestedEnd > existingStart
@@ -380,14 +530,25 @@ export const getAvailableConnectors = async (req, res) => {
 
     // Get Active Tariff for Station Pricing
     const tariffRows = await query(
-      "SELECT base_rate_per_kwh, peak_rate_per_kwh, off_peak_rate_per_kwh, connection_fee FROM tariffs WHERE station_id = ? AND status = 'ACTIVE' LIMIT 1",
+      "SELECT base_rate_per_kwh, peak_rate_per_kwh, off_peak_rate_per_kwh, connection_fee FROM tariffs WHERE station_id = ? AND status = 'ACTIVE' ORDER BY id DESC LIMIT 1",
       [station.id]
     );
     const basePrice = tariffRows.length > 0 ? parseFloat(tariffRows[0].base_rate_per_kwh) : 18.0;
 
     // 6. Process Each Connector Status & Compatibility
     const processedConnectors = stationConnectors.map((c) => {
-      const isCompatible = Number(c.connector_type_id) === Number(vehicleConnectorTypeId);
+      const vConn = (vehicleConnectorName || vehicle.connector_type || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const cConn = (c.connector_name || c.connector_type || c.charger_type || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+      const isCompatible = (
+        vConn === cConn ||
+        (vConn.includes("CCS") && (cConn.includes("CCS") || cConn === "DCFAST")) ||
+        (vConn.includes("TYPE2") && (cConn.includes("TYPE2") || cConn === "AC")) ||
+        (vConn.includes("CHADEMO") && cConn.includes("CHADEMO")) ||
+        (vConn.includes("GBT") && cConn.includes("GBT")) ||
+        (Number(c.connector_type_id) > 0 && Number(c.connector_type_id) === Number(vehicleConnectorTypeId))
+      );
+
       const isBooked = bookedConnectorIds.has(c.id) || (c.charger_id && bookedChargerIds.has(c.charger_id));
       const opStatus = (c.status || "AVAILABLE").toUpperCase();
 
@@ -425,12 +586,12 @@ export const getAvailableConnectors = async (req, res) => {
         id: c.id,
         connectorId: c.connector_id || `CON${String(c.id).padStart(6, "0")}`,
         connector_id: c.connector_id || `CON${String(c.id).padStart(6, "0")}`,
-        connectorNumber: c.connector_number,
-        connector_number: c.connector_number,
+        connectorNumber: c.charger_name || c.connector_number || `Bay ${c.id}`,
+        connector_number: c.charger_name || c.connector_number || `Bay ${c.id}`,
         stationId: c.station_id,
         station_id: c.station_id,
-        connectorTypeId: c.connector_type_id,
-        connector_type_id: c.connector_type_id,
+        connectorTypeId: c.connector_type_id || 1,
+        connector_type_id: c.connector_type_id || 1,
         connectorType: c.connector_name,
         connector_type: c.connector_name,
         powerKw: parseFloat(c.power_kw),
@@ -468,16 +629,21 @@ export const getAvailableConnectors = async (req, res) => {
       },
       timeSlot: {
         date: cleanDate,
-        startTime: cleanStartTime,
-        endTime: cleanEndTime,
+        startTime: cleanStartTime.slice(0, 5),
+        endTime: cleanEndTime.slice(0, 5),
         durationMinutes: durMins,
-        durationHours: durMins / 60,
+      },
+      summary: {
+        total: stationConnectors.length,
+        compatible: compatibleConnectors.length,
+        available: availableConnectors.length,
       },
       count: compatibleConnectors.length,
       availableCount: availableConnectors.length,
-      connectors: compatibleConnectors, // Compatible connectors for user's vehicle
+      connectors: compatibleConnectors,
+      compatibleConnectors,
       availableConnectors,
-      allStationConnectors: processedConnectors, // All station connectors for full visibility
+      allStationConnectors: processedConnectors,
     });
   } catch (error) {
     console.error("Get Available Connectors Error:", error);
@@ -626,38 +792,106 @@ export const getSlotBookings = async (req, res) => {
 };
 
 /**
- * POST /api/bookings/check-availability
- * Double Booking Prevention validation endpoint
+ * GET /api/bookings/availability OR POST /api/bookings/check OR POST /api/bookings/check-availability
+ * Double Booking Prevention & Dynamic 24-Hour Availability validation endpoint
  */
 export const checkAvailability = async (req, res) => {
   try {
-    const { station_id, stationId, connector_id, connectorId, charger_id, chargerId, booking_date, bookingDate, start_time, startTime, end_time, endTime, duration_minutes = 60, durationMinutes = 60 } = req.body;
+    const data = req.method === "GET" ? req.query : req.body;
+    const {
+      station_id,
+      stationId,
+      connector_id,
+      connectorId,
+      charger_id,
+      chargerId,
+      booking_date,
+      bookingDate,
+      date,
+      start_time,
+      startTime,
+      end_time,
+      endTime,
+      duration = 60,
+      duration_minutes = 60,
+      durationMinutes = 60,
+    } = data;
 
     const targetConnectorId = connector_id || connectorId || charger_id || chargerId;
-    const bDate = booking_date || bookingDate;
+    const bDate = booking_date || bookingDate || date;
     const sTime = start_time || startTime;
     const eTime = end_time || endTime;
-    const durMins = parseInt(duration_minutes || durationMinutes, 10) || 60;
+    const durMins = parseInt(duration_minutes || durationMinutes || duration, 10) || 60;
     const sId = station_id || stationId;
 
     if (!targetConnectorId || !bDate || !sTime) {
       return res.status(400).json({
         success: false,
+        available: false,
+        isAvailable: false,
         message: "connector_id, booking_date, and start_time are required.",
       });
     }
 
     const cleanDate = typeof bDate === "string" ? bDate.split("T")[0] : bDate;
-    const cleanStartTime = sTime.length === 5 ? `${sTime}:00` : sTime.slice(0, 8);
-    const cleanEndTime = eTime ? (eTime.length === 5 ? `${eTime}:00` : eTime.slice(0, 8)) : calculateEndTimeString(cleanStartTime, durMins);
+    const cleanStartTime = normalizeTo24Hour(sTime);
+    const cleanEndTime = eTime ? normalizeTo24Hour(eTime) : calculateEndTimeString(cleanStartTime, durMins);
 
+    // 1. Validate Date (No Past Dates)
+    const todayStr = new Date().toISOString().split("T")[0];
+    if (cleanDate < todayStr) {
+      return res.status(400).json({
+        success: false,
+        available: false,
+        isAvailable: false,
+        message: "Booking date cannot be in the past.",
+      });
+    }
+
+    // 2. Validate Today's Time (No Past Times)
+    if (cleanDate === todayStr) {
+      const now = new Date();
+      const currentHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:00`;
+      if (cleanStartTime < currentHHMM) {
+        return res.status(400).json({
+          success: false,
+          available: false,
+          isAvailable: false,
+          message: "Estimated start time cannot be in the past for today's date.",
+        });
+      }
+    }
+
+    // 3. Validate Station Operating Hours
+    let operatingHours = { open: "00:00:00", close: "23:59:59", is24h: true, openDisplay: "00:00", closeDisplay: "23:59" };
+    if (sId) {
+      const stnRows = await query("SELECT opening_time, closing_time, station_name FROM stations WHERE id = ? OR station_id = ? LIMIT 1", [
+        /^\d+$/.test(sId) ? parseInt(sId, 10) : 0,
+        sId,
+      ]);
+      if (stnRows && stnRows.length > 0) {
+        operatingHours = parseStationOperatingHours(stnRows[0]);
+        if (!operatingHours.is24h) {
+          if (cleanStartTime < operatingHours.open || cleanEndTime > operatingHours.close) {
+            return res.status(400).json({
+              success: false,
+              available: false,
+              isAvailable: false,
+              message: `Selected charging duration exceeds station operating hours. Station operates from ${operatingHours.openDisplay} to ${operatingHours.closeDisplay}.`,
+            });
+          }
+        }
+      }
+    }
+
+    // 4. SQL Conflict Detection: requested_start < existing_end AND requested_end > existing_start
     const conflicts = await query(
-      `SELECT id, booking_id, start_time, end_time 
+      `SELECT id, booking_id, start_time, end_time, duration_minutes, booking_status 
        FROM bookings 
        WHERE (? IS NULL OR station_id = ?)
          AND (connector_id = ? OR charger_id = ?) 
          AND booking_date = ?
-         AND booking_status NOT IN ('CANCELLED', 'EXPIRED', 'NO_SHOW')
+         AND booking_status IN ('PENDING_PAYMENT', 'CONFIRMED', 'PROTECTED', 'CHECKED_IN', 'ACTIVE', 'CHARGING', 'IN_PROGRESS')
          AND (start_time < ? AND end_time > ?)`,
       [sId || null, sId || null, targetConnectorId, targetConnectorId, cleanDate, cleanEndTime, cleanStartTime]
     );
@@ -665,26 +899,55 @@ export const checkAvailability = async (req, res) => {
     const isAvailable = conflicts.length === 0;
 
     if (!isAvailable) {
+      const firstConflict = conflicts[0];
+      const conflictStart = String(firstConflict.start_time).slice(0, 5);
+      const conflictEnd = String(firstConflict.end_time).slice(0, 5);
+
+      // 5. Generate Smart Alternative Available Times Suggestions
+      const suggestedAlternatives = await findAlternativeSlots({
+        stationId: sId,
+        connectorId: targetConnectorId,
+        date: cleanDate,
+        durationMinutes: durMins,
+        operatingHours,
+      });
+
       return res.status(409).json({
         success: false,
-        isAvailable: false,
         available: false,
-        message: "Charging slot is already booked for the selected time.",
+        isAvailable: false,
+        status: "BOOKED",
+        message: `Slot unavailable. This charging connector is already booked from ${conflictStart} to ${conflictEnd}.`,
         conflictCount: conflicts.length,
-        conflicts,
+        conflicts: conflicts.map((c) => ({
+          bookingId: c.booking_id || `EV${c.id}`,
+          startTime: String(c.start_time).slice(0, 5),
+          endTime: String(c.end_time).slice(0, 5),
+          timeSlot: `${String(c.start_time).slice(0, 5)} - ${String(c.end_time).slice(0, 5)}`,
+        })),
+        suggestedAlternatives,
       });
     }
 
+    const startDisplay = cleanStartTime.slice(0, 5);
+    const endDisplay = cleanEndTime.slice(0, 5);
+
     res.json({
       success: true,
-      isAvailable: true,
       available: true,
-      message: "Slot is available for reservation.",
+      isAvailable: true,
+      status: "AVAILABLE",
+      message: `Connector available from ${startDisplay} to ${endDisplay}.`,
+      timeSlot: `${startDisplay} - ${endDisplay}`,
+      startTime: startDisplay,
+      endTime: endDisplay,
+      durationMinutes: durMins,
       conflictCount: 0,
       conflicts: [],
+      suggestedAlternatives: [],
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error checking slot availability", error: error.message });
+    res.status(500).json({ success: false, available: false, isAvailable: false, message: "Error checking slot availability", error: error.message });
   }
 };
 
@@ -745,10 +1008,25 @@ export const createBooking = async (req, res) => {
     }
 
     const cleanDate = typeof rawDate === "string" ? rawDate.split("T")[0] : rawDate;
-    const cleanStartTime = sTime.length === 5 ? `${sTime}:00` : sTime.slice(0, 8);
+    const cleanStartTime = normalizeTo24Hour(sTime);
     const cleanEndTime = calculateEndTimeString(cleanStartTime, durMins);
     const payRef = payment_id || paymentId || transactionId || null;
     const isPaid = !!payRef || (payment_status || "").toUpperCase() === "PAID" || (payment_status || "").toUpperCase() === "SUCCESS";
+
+    // Validate Date (No Past Dates)
+    const todayStr = new Date().toISOString().split("T")[0];
+    if (cleanDate < todayStr) {
+      return res.status(400).json({ success: false, message: "Booking date cannot be in the past." });
+    }
+
+    // Validate Today's Time (No Past Times)
+    if (cleanDate === todayStr) {
+      const now = new Date();
+      const currentHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:00`;
+      if (cleanStartTime < currentHHMM) {
+        return res.status(400).json({ success: false, message: "Estimated start time cannot be in the past for today's date." });
+      }
+    }
 
     const resultData = await transaction(async (connection) => {
       // 1. Validate Vehicle ownership & retrieve connector type
@@ -780,9 +1058,9 @@ export const createBooking = async (req, res) => {
         vehConnTypeId = ctRows.length > 0 ? ctRows[0].id : 1;
       }
 
-      // 2. Validate Station exists and is active
+      // 2. Validate Station exists, is active, and check operating hours
       const [stationRows] = await connection.execute(
-        "SELECT id, station_name, owner_id, status, approval_status FROM stations WHERE id = ? FOR UPDATE",
+        "SELECT id, station_name, owner_id, status, approval_status, opening_time, closing_time FROM stations WHERE id = ? FOR UPDATE",
         [sId]
       );
       if (stationRows.length === 0) {
@@ -797,48 +1075,81 @@ export const createBooking = async (req, res) => {
         throw err;
       }
 
+      // Operating hours validation
+      const opHours = parseStationOperatingHours(station);
+      if (!opHours.is24h) {
+        if (cleanStartTime < opHours.open || cleanEndTime > opHours.close) {
+          const err = new Error(`Selected charging duration exceeds station operating hours. Station operates from ${opHours.openDisplay} to ${opHours.closeDisplay}.`);
+          err.statusCode = 400;
+          throw err;
+        }
+      }
+
       // 3. Validate Connector belongs to Station and is compatible with Vehicle
       const isConnNum = /^\d+$/.test(String(connParam));
-      const [connRows] = await connection.execute(
-        `SELECT sc.*, ct.connector_name 
-         FROM station_connectors sc
-         JOIN connector_types ct ON sc.connector_type_id = ct.id
-         WHERE (sc.id = ? OR sc.connector_id = ?) AND sc.station_id = ? 
+      const [chgConnRows] = await connection.execute(
+        `SELECT 
+           COALESCE(cc.id, c.id) as connector_db_id,
+           c.id as charger_db_id,
+           c.station_id,
+           c.charger_name,
+           c.charger_type,
+           c.status as charger_status,
+           COALESCE(cc.connector_type, c.charger_type, 'CCS2') as connector_name,
+           COALESCE(cc.power_kw, c.power_kw, 60.0) as power_kw,
+           COALESCE(cc.status, c.status, 'AVAILABLE') as status
+         FROM chargers c
+         LEFT JOIN charger_connectors cc ON c.id = cc.charger_id
+         WHERE (cc.id = ? OR cc.connector_id = ? OR c.id = ? OR c.charger_id = ?) AND c.station_id = ?
          FOR UPDATE`,
-        [isConnNum ? parseInt(connParam, 10) : 0, String(connParam), sId]
+        [isConnNum ? parseInt(connParam, 10) : 0, String(connParam), isConnNum ? parseInt(connParam, 10) : 0, String(connParam), sId]
       );
 
       let connector;
       let connectorDbId;
       let chargerDbId;
 
-      if (connRows.length > 0) {
+      if (chgConnRows.length > 0) {
+        connector = chgConnRows[0];
+        connectorDbId = connector.connector_db_id;
+        chargerDbId = connector.charger_db_id;
+      } else {
+        const [connRows] = await connection.execute(
+          `SELECT sc.*, ct.connector_name 
+           FROM station_connectors sc
+           JOIN connector_types ct ON sc.connector_type_id = ct.id
+           WHERE (sc.id = ? OR sc.connector_id = ?) AND sc.station_id = ? 
+           FOR UPDATE`,
+          [isConnNum ? parseInt(connParam, 10) : 0, String(connParam), sId]
+        );
+        if (connRows.length === 0) {
+          const err = new Error(`Connector #${connParam} does not belong to station #${sId} or does not exist.`);
+          err.statusCode = 404;
+          throw err;
+        }
         connector = connRows[0];
         connectorDbId = parseInt(connector.id, 10);
         chargerDbId = typeof connector.charger_id === 'number' 
           ? connector.charger_id 
           : (parseInt(connector.charger_id, 10) || connectorDbId);
-      } else {
-        // Fallback check against chargers table for stations configured directly with chargers
-        const [chgRows] = await connection.execute(
-          "SELECT * FROM chargers WHERE (id = ? OR charger_id = ?) AND station_id = ? FOR UPDATE",
-          [isConnNum ? parseInt(connParam, 10) : 0, String(connParam), sId]
-        );
-        if (chgRows.length === 0) {
-          const err = new Error(`Connector #${connParam} does not belong to station #${sId} or does not exist.`);
-          err.statusCode = 404;
-          throw err;
-        }
-        connector = chgRows[0];
-        connector.connector_type_id = vehConnTypeId;
-        connectorDbId = parseInt(connector.id, 10);
-        chargerDbId = parseInt(connector.id, 10);
       }
 
-      // 4. Validate Connector Compatibility
-      if (Number(connector.connector_type_id) !== Number(vehConnTypeId)) {
+      // 4. Validate Connector Compatibility with Vehicle
+      const vConn = (vehicle.connector_type || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const cConn = (connector.connector_name || connector.connector_type || connector.charger_type || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+      const isCompatible = (
+        vConn === cConn ||
+        (vConn.includes("CCS") && (cConn.includes("CCS") || cConn === "DCFAST")) ||
+        (vConn.includes("TYPE2") && (cConn.includes("TYPE2") || cConn === "AC")) ||
+        (vConn.includes("CHADEMO") && cConn.includes("CHADEMO")) ||
+        (vConn.includes("GBT") && cConn.includes("GBT")) ||
+        (Number(connector.connector_type_id) > 0 && Number(connector.connector_type_id) === Number(vehConnTypeId))
+      );
+
+      if (!isCompatible) {
         const err = new Error(
-          `Incompatible connector: Your vehicle requires a ${vehicle.connector_type || "compatible"} connector, but this connector is ${connector.connector_name || "different"}.`
+          `Incompatible connector: Your vehicle requires a ${vehicle.connector_type || "compatible"} connector, but this slot is ${connector.connector_name || "different"}.`
         );
         err.statusCode = 400;
         throw err;
@@ -846,18 +1157,19 @@ export const createBooking = async (req, res) => {
 
       // 5. Validate Connector Operational Status
       const opStatus = (connector.status || "AVAILABLE").toUpperCase();
-      if (opStatus === "MAINTENANCE") {
-        const err = new Error(`Connector #${connector.connector_number || connParam} is currently under maintenance and cannot be booked.`);
+      const chargerOpStatus = (connector.charger_status || "AVAILABLE").toUpperCase();
+      if (opStatus === "MAINTENANCE" || chargerOpStatus === "MAINTENANCE") {
+        const err = new Error(`Connector is currently under maintenance and cannot be booked.`);
         err.statusCode = 400;
         throw err;
       }
-      if (opStatus === "FAULT" || opStatus === "FAULTED") {
-        const err = new Error(`Connector #${connector.connector_number || connParam} has a technical fault and is unavailable.`);
+      if (opStatus === "FAULT" || opStatus === "FAULTED" || chargerOpStatus === "FAULTED") {
+        const err = new Error(`Connector has a technical fault and is unavailable.`);
         err.statusCode = 400;
         throw err;
       }
-      if (opStatus === "OFFLINE") {
-        const err = new Error(`Connector #${connector.connector_number || connParam} is currently offline.`);
+      if (opStatus === "OFFLINE" || chargerOpStatus === "OFFLINE") {
+        const err = new Error(`Connector is currently offline.`);
         err.statusCode = 400;
         throw err;
       }
@@ -868,14 +1180,17 @@ export const createBooking = async (req, res) => {
         `SELECT id, booking_id, start_time, end_time FROM bookings 
          WHERE (connector_id = ? OR charger_id = ?)
            AND booking_date = ?
-           AND booking_status NOT IN ('CANCELLED', 'EXPIRED', 'NO_SHOW')
+           AND booking_status IN ('PENDING_PAYMENT', 'CONFIRMED', 'PROTECTED', 'CHECKED_IN', 'ACTIVE', 'CHARGING', 'IN_PROGRESS')
            AND (start_time < ? AND end_time > ?) 
          FOR UPDATE`,
         [connectorDbId, chargerDbId, cleanDate, cleanEndTime, cleanStartTime]
       );
 
       if (conflictRows.length > 0) {
-        const conflictErr = new Error("Charging slot is already booked for the selected time.");
+        const firstConflict = conflictRows[0];
+        const cs = String(firstConflict.start_time).slice(0, 5);
+        const ce = String(firstConflict.end_time).slice(0, 5);
+        const conflictErr = new Error(`This slot was just booked by another user (Booked from ${cs} to ${ce}). Please select another available time.`);
         conflictErr.statusCode = 409;
         throw conflictErr;
       }
@@ -918,12 +1233,13 @@ export const createBooking = async (req, res) => {
         `INSERT INTO bookings 
          (booking_id, user_id, vehicle_id, station_id, charger_id, connector_id, tariff_id, 
           booking_date, start_time, end_time, duration_minutes,
+          estimated_charging_minutes, recommended_duration_minutes, buffer_minutes, reserved_duration_minutes,
           current_soc_percent, target_soc_percent, battery_capacity_kwh_snapshot,
           energy_required_kwh, estimated_grid_energy_kwh, tariff_per_kwh, charging_efficiency_snapshot,
           estimated_energy_cost, platform_fee, tax_amount, effective_charging_power_kw, estimated_charging_time,
           tariff_rate_snapshot, connection_fee_snapshot, estimated_amount, 
           booking_status, payment_status, payment_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           bookingCode,
           userId,
@@ -935,6 +1251,10 @@ export const createBooking = async (req, res) => {
           cleanDate,
           cleanStartTime,
           cleanEndTime,
+          durMins,
+          estimate.estimatedChargingMinutes || Math.round(durMins * 0.75),
+          estimate.recommendedDurationMinutes || durMins,
+          estimate.safetyBufferMinutes || 5,
           durMins,
           estimate.currentSoc,
           estimate.targetSoc,
@@ -1128,29 +1448,49 @@ export const updateBooking = async (req, res) => {
       if (payment_status) {
         updates.push("payment_status = ?");
         params.push(payment_status.toUpperCase());
+      } else if (cleanStatus === "COMPLETED") {
+        updates.push("payment_status = 'PAID'");
+      }
+
+      if (cleanStatus === "COMPLETED") {
+        updates.push("actual_end_time = NOW()");
       }
 
       params.push(booking.id);
       await connection.execute(`UPDATE bookings SET ${updates.join(", ")}, updated_at = NOW() WHERE id = ?`, params);
 
-      // On charging completion, update vehicle latest known SOC to target SOC
-      if (cleanStatus === "COMPLETED" && booking.vehicle_id) {
-        const targetSoc = booking.target_soc_percent !== null && booking.target_soc_percent !== undefined
-          ? parseFloat(booking.target_soc_percent)
-          : 100.0;
-        const [vehRow] = await connection.execute("SELECT current_soc_percent FROM vehicles WHERE id = ?", [booking.vehicle_id]);
-        const prevSoc = vehRow.length > 0 && vehRow[0].current_soc_percent !== null ? parseFloat(vehRow[0].current_soc_percent) : null;
-
+      // On charging completion, release charger, connector and complete session
+      if (cleanStatus === "COMPLETED") {
         await connection.execute(
-          "UPDATE vehicles SET current_soc_percent = ?, soc_updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-          [targetSoc, booking.vehicle_id]
+          "UPDATE charging_sessions SET session_status = 'COMPLETED', end_time = NOW() WHERE booking_id = ? AND session_status IN ('STARTED', 'CHARGING', 'ACTIVE', 'IN_PROGRESS')",
+          [booking.id]
         );
 
-        await connection.execute(
-          `INSERT INTO vehicle_soc_history (vehicle_id, previous_soc_percent, new_soc_percent, source, recorded_at)
-           VALUES (?, ?, ?, 'CHARGING_COMPLETED', CURRENT_TIMESTAMP)`,
-          [booking.vehicle_id, prevSoc, targetSoc]
-        );
+        if (booking.charger_id) {
+          await connection.execute("UPDATE chargers SET status = 'AVAILABLE' WHERE id = ?", [booking.charger_id]);
+        }
+        if (booking.connector_id) {
+          await connection.execute("UPDATE station_connectors SET status = 'AVAILABLE' WHERE id = ?", [booking.connector_id]);
+        }
+
+        if (booking.vehicle_id) {
+          const targetSoc = booking.target_soc_percent !== null && booking.target_soc_percent !== undefined
+            ? parseFloat(booking.target_soc_percent)
+            : 100.0;
+          const [vehRow] = await connection.execute("SELECT current_soc_percent FROM vehicles WHERE id = ?", [booking.vehicle_id]);
+          const prevSoc = vehRow.length > 0 && vehRow[0].current_soc_percent !== null ? parseFloat(vehRow[0].current_soc_percent) : null;
+
+          await connection.execute(
+            "UPDATE vehicles SET current_soc_percent = ?, soc_updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            [targetSoc, booking.vehicle_id]
+          );
+
+          await connection.execute(
+            `INSERT INTO vehicle_soc_history (vehicle_id, previous_soc_percent, new_soc_percent, source, recorded_at)
+             VALUES (?, ?, ?, 'CHARGING_COMPLETED', CURRENT_TIMESTAMP)`,
+            [booking.vehicle_id, prevSoc, targetSoc]
+          );
+        }
       }
     });
 
@@ -1158,6 +1498,9 @@ export const updateBooking = async (req, res) => {
     const formatted = fullRows.length > 0 ? formatBooking(fullRows[0]) : booking;
 
     try {
+      if (cleanStatus === "COMPLETED") {
+        emitBookingCompleted(formatted);
+      }
       emitBookingUpdated(formatted);
     } catch (e) {}
 

@@ -37,12 +37,12 @@ export default function AdminReports() {
 
   return (
     <div className="space-y-6">
-      <div className="p-6 md:p-8 rounded-3xl bg-[#0B1329] border border-slate-800 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="p-6 md:p-8 rounded-3xl theme-card shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-white flex items-center gap-2">
-            <FileText size={28} className="text-emerald-400" /> System Report Generation
+          <h1 className="text-2xl md:text-3xl font-extrabold text-[var(--text-primary)] flex items-center gap-2">
+            <FileText size={28} className="text-emerald-500" /> System Report Generation
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-[var(--text-muted)] mt-1">
             Export comprehensive system reports, financial summaries, and infrastructure audits to CSV or print.
           </p>
         </div>
@@ -50,13 +50,13 @@ export default function AdminReports() {
         <div className="flex gap-2">
           <button
             onClick={() => downloadCSV(reportType)}
-            className="px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs uppercase tracking-wider transition flex items-center gap-2"
+            className="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs uppercase tracking-wider transition flex items-center gap-2 cursor-pointer shadow-md"
           >
             <Download size={16} /> Export CSV
           </button>
           <button
             onClick={() => window.print()}
-            className="px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition flex items-center gap-2"
+            className="px-5 py-3 rounded-2xl bg-[var(--bg-surface-raised)] hover:bg-[var(--border-subtle)] text-[var(--text-primary)] font-bold text-xs transition flex items-center gap-2 border border-[var(--border-subtle)] cursor-pointer"
           >
             <Printer size={16} /> Print Report
           </button>
@@ -68,48 +68,48 @@ export default function AdminReports() {
           <button
             key={rep}
             onClick={() => setReportType(rep)}
-            className={`p-5 rounded-2xl border text-left transition shadow-xl ${
+            className={`p-5 rounded-2xl border text-left transition shadow-sm cursor-pointer ${
               reportType === rep
-                ? "bg-emerald-500/20 border-emerald-500/60 text-white"
-                : "bg-[#0B1329] border-slate-800 text-slate-400 hover:border-slate-700"
+                ? "bg-emerald-500/10 border-emerald-500/60 text-emerald-700 dark:text-emerald-400 font-bold"
+                : "theme-card text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--accent-primary)]/40"
             }`}
           >
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider block text-emerald-400">REPORT MODULE</span>
-            <h4 className="font-bold text-sm text-white mt-1">{rep}</h4>
+            <span className="text-[10px] font-mono font-bold uppercase tracking-wider block text-emerald-500">REPORT MODULE</span>
+            <h4 className="font-bold text-sm text-[var(--text-primary)] mt-1">{rep}</h4>
           </button>
         ))}
       </div>
 
       {/* Preview Section */}
-      <div className="p-6 rounded-3xl bg-[#0B1329] border border-slate-800 shadow-xl space-y-4">
-        <h3 className="text-base font-bold text-white border-b border-slate-800 pb-3">
+      <div className="p-6 rounded-3xl theme-card shadow-xl space-y-4">
+        <h3 className="text-base font-bold text-[var(--text-primary)] border-b border-[var(--border-subtle)] pb-3">
           Report Data Preview ({reportType})
         </h3>
 
         <div className="overflow-x-auto text-xs">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-slate-800 bg-slate-900/80 text-slate-400 font-bold uppercase">
+              <tr className="border-b border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] text-[var(--text-muted)] font-bold uppercase">
                 <th className="py-3 px-3">Metric / Field</th>
                 <th className="py-3 px-3">Value</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/80 text-slate-200">
+            <tbody className="divide-y divide-[var(--border-subtle)] text-[var(--text-primary)]">
               <tr>
                 <td className="py-3 px-3 font-bold">Total Registered Customers</td>
-                <td className="py-3 px-3 font-mono font-bold text-emerald-400">{customers.length} Users</td>
+                <td className="py-3 px-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">{customers.length} Users</td>
               </tr>
               <tr>
                 <td className="py-3 px-3 font-bold">Total Operational Stations</td>
-                <td className="py-3 px-3 font-mono font-bold text-cyan-400">{stations.length} Stations</td>
+                <td className="py-3 px-3 font-mono font-bold text-cyan-600 dark:text-cyan-400">{stations.length} Stations</td>
               </tr>
               <tr>
                 <td className="py-3 px-3 font-bold">Total Bookings Processed</td>
-                <td className="py-3 px-3 font-mono font-bold text-purple-400">{bookings.length} Bookings</td>
+                <td className="py-3 px-3 font-mono font-bold text-purple-600 dark:text-purple-400">{bookings.length} Bookings</td>
               </tr>
               <tr>
                 <td className="py-3 px-3 font-bold">Total Platform Revenue</td>
-                <td className="py-3 px-3 font-mono font-bold text-white">₹{payments.reduce((sum, p) => sum + (p.amount || 0), 0) || 45280}</td>
+                <td className="py-3 px-3 font-mono font-bold text-[var(--text-primary)]">₹{payments.reduce((sum, p) => sum + (p.amount || 0), 0) || 45280}</td>
               </tr>
             </tbody>
           </table>

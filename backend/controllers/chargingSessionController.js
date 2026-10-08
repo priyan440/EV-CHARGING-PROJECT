@@ -15,9 +15,11 @@ const generateSessionId = async (connection) => {
  * Format charging session for frontend
  */
 export const formatSession = (s) => {
-  const soc = parseInt(s.battery_soc, 10) || 20;
+  const soc = parseInt(s.battery_soc, 10) || parseInt(s.booking_start_soc, 10) || 50;
+  const startSoc = parseInt(s.booking_start_soc, 10) || parseInt(s.battery_soc, 10) || 50;
+  const targetSoc = parseInt(s.booking_target_soc, 10) || 100;
   const energy = parseFloat(s.energy_kwh) || 0.0;
-  const power = parseFloat(s.power_kw) || 50.0;
+  const power = parseFloat(s.power_kw) || parseFloat(s.charger_power) || 60.0;
   const duration = parseInt(s.duration_minutes, 10) || 0;
   const amount = parseFloat(s.total_amount) || 0.0;
 
@@ -30,17 +32,17 @@ export const formatSession = (s) => {
     userId: s.user_id,
     customerName: s.customer_name || "EV Customer",
     stationId: s.station_id,
-    stationName: s.station_name || "EV Station",
+    stationName: s.station_name || "VoltCharge Hub",
     stationAddress: s.station_address || "Address not provided",
     chargerId: s.charger_id_code || `CHG${String(s.charger_id).padStart(6, "0")}`,
     chargerNumericId: s.charger_id,
     chargerName: s.charger_name || "DC Fast Charger",
     chargerType: s.charger_type || "DC_FAST",
-    connectorId: s.connector_id ? `CON${String(s.connector_id).padStart(6, "0")}` : "Bay #1",
+    connectorId: s.connector_id ? `CON${String(s.connector_id).padStart(6, "0")}` : "Connector 01",
     connectorType: s.charger_type === "AC" ? "Type 2 AC" : "CCS2 DC Fast",
     vehicleId: s.vehicle_id,
     vehicleNumber: s.registration_number || "N/A",
-    vehicleModel: s.model ? `${s.brand || ""} ${s.model}`.trim() : "Standard EV",
+    vehicleModel: s.model ? `${s.brand || ""} ${s.model}`.trim() : "Tata Motors Nexon EV Max",
     status: s.session_status || "CHARGING",
     sessionStatus: s.session_status || "CHARGING",
     session_status: s.session_status || "CHARGING",
@@ -58,8 +60,11 @@ export const formatSession = (s) => {
     batterySoc: soc,
     batteryLevel: soc,
     currentBattery: soc,
-    startingBattery: Math.max(10, soc),
-    targetBattery: 80,
+    startingBattery: startSoc,
+    startSoc: startSoc,
+    targetBattery: targetSoc,
+    targetSoc: targetSoc,
+    estimatedAmount: parseFloat(s.booking_estimated_amount || s.estimated_amount) || 441.91,
     durationMinutes: duration,
     totalAmount: amount,
     currentCost: amount,
@@ -73,7 +78,9 @@ const SESSIONS_JOIN_QUERY = `
          s.station_name, s.address as station_address, s.owner_id,
          v.registration_number, v.brand, v.model,
          c.charger_name, c.charger_type, c.power_kw as charger_power, c.charger_id as charger_id_code,
-         b.booking_id as booking_code, b.tariff_rate_snapshot, b.connection_fee_snapshot
+         b.booking_id as booking_code, b.tariff_rate_snapshot, b.connection_fee_snapshot,
+         b.current_soc_percent as booking_start_soc, b.target_soc_percent as booking_target_soc,
+         b.estimated_amount as booking_estimated_amount
   FROM charging_sessions cs
   JOIN users u ON cs.user_id = u.id
   JOIN stations s ON cs.station_id = s.id
@@ -258,7 +265,7 @@ export const startSession = async (req, res) => {
 
     try {
       emitSessionStarted(sessionData);
-    } catch (e) {}
+    } catch (e) { }
 
     res.status(201).json({
       success: true,
@@ -279,21 +286,51 @@ export const startSession = async (req, res) => {
 export const stopSession = async (req, res) => {
   try {
     const userId = req.user?.id;
-    const targetSessionId = req.params?.sessionId || req.params?.id || req.body?.session_id || req.body?.sessionId;
+    const targetSessionId =
+      req.params?.sessionId ||
+      req.params?.id ||
+      req.body?.session_id ||
+      req.body?.sessionId ||
+      req.body?.booking_id ||
+      req.body?.bookingId ||
+      req.query?.sessionId ||
+      req.query?.bookingId;
 
     let session = null;
+    let bookingRow = null;
 
+    // 1. If a target identifier is provided, try to find booking or session
     if (targetSessionId && targetSessionId !== "undefined" && targetSessionId !== "null") {
       const isNumeric = /^\d+$/.test(targetSessionId);
+
+      // Check if it matches a booking directly
+      const bRows = await query(
+        "SELECT * FROM bookings WHERE id = ? OR booking_id = ?",
+        [isNumeric ? parseInt(targetSessionId, 10) : 0, targetSessionId]
+      );
+      if (bRows && bRows.length > 0) {
+        bookingRow = bRows[0];
+      }
+
+      // Check if it matches a charging session directly or via booking
       const sRows = await query(
-        "SELECT * FROM charging_sessions WHERE id = ? OR session_id = ? OR booking_id = ?",
-        [isNumeric ? parseInt(targetSessionId, 10) : 0, targetSessionId, isNumeric ? parseInt(targetSessionId, 10) : 0]
+        `SELECT * FROM charging_sessions 
+         WHERE id = ? OR session_id = ? OR booking_id = ? OR (? > 0 AND booking_id = ?)
+         ORDER BY id DESC LIMIT 1`,
+        [
+          isNumeric ? parseInt(targetSessionId, 10) : 0,
+          targetSessionId,
+          isNumeric ? parseInt(targetSessionId, 10) : 0,
+          bookingRow ? bookingRow.id : 0,
+          bookingRow ? bookingRow.id : 0,
+        ]
       );
       if (sRows && sRows.length > 0) {
         session = sRows[0];
       }
     }
 
+    // 2. If no session found yet, check active session for the authenticated user
     if (!session && userId) {
       const sRows = await query(
         "SELECT * FROM charging_sessions WHERE user_id = ? AND session_status IN ('ACTIVE', 'CHARGING', 'STARTED', 'IN_PROGRESS') ORDER BY id DESC LIMIT 1",
@@ -304,13 +341,30 @@ export const stopSession = async (req, res) => {
       }
     }
 
-    if (!session) {
-      return res.status(404).json({ success: false, message: "No active charging session found." });
+    // 3. If still no session but user has a checked_in or charging booking, resolve that booking
+    if (!session && !bookingRow && userId) {
+      const bRows = await query(
+        "SELECT * FROM bookings WHERE user_id = ? AND booking_status IN ('CHECKED_IN', 'IN_PROGRESS', 'CHARGING', 'ACTIVE') ORDER BY id DESC LIMIT 1",
+        [userId]
+      );
+      if (bRows && bRows.length > 0) {
+        bookingRow = bRows[0];
+      }
     }
 
+    if (!session && !bookingRow) {
+      return res.status(404).json({ success: false, message: "No active charging session or booking found to stop." });
+    }
+
+    const targetChargerId = session?.charger_id || bookingRow?.charger_id;
+    const targetConnectorId = session?.connector_id || bookingRow?.connector_id;
+    const targetStationId = session?.station_id || bookingRow?.station_id;
+    const targetVehicleId = session?.vehicle_id || bookingRow?.vehicle_id;
+    const targetBookingNumericId = session?.booking_id || bookingRow?.id;
+
     // Stop background simulator
-    if (session.charger_id) {
-      stopSimulatedCharging(session.charger_id);
+    if (targetChargerId) {
+      stopSimulatedCharging(targetChargerId);
     }
 
     const {
@@ -327,55 +381,114 @@ export const stopSession = async (req, res) => {
       battery_soc,
     } = req.body || {};
 
-    const cleanEnergy = parseFloat(energy_delivered || energy_kwh || energyKwh || session.energy_kwh) || 0.0;
-    const cleanAmount = parseFloat(current_cost || total_amount || totalAmount || session.total_amount) || 0.0;
-    const cleanDuration = parseInt(duration_minutes || durationMinutes || session.duration_minutes, 10) || 1;
-    const cleanSoc = parseInt(final_battery || battery_soc || batterySoc || session.battery_soc, 10) || 80;
+    const cleanEnergy = parseFloat(energy_delivered || energy_kwh || energyKwh || session?.energy_kwh || 0.0);
+    const cleanAmount = parseFloat(current_cost || total_amount || totalAmount || session?.total_amount || bookingRow?.estimated_amount || 0.0);
+    const cleanDuration = parseInt(duration_minutes || durationMinutes || session?.duration_minutes || 1, 10);
+    const cleanSoc = parseInt(final_battery || battery_soc || batterySoc || session?.battery_soc || bookingRow?.target_soc_percent || 100, 10);
+
+    let activeSessionId = session?.id;
 
     await transaction(async (connection) => {
-      // Mark Session Completed
-      await connection.execute(
-        `UPDATE charging_sessions 
-         SET session_status = 'COMPLETED', end_time = NOW(), final_meter = energy_kwh, energy_kwh = ?, total_amount = ?, duration_minutes = ?, battery_soc = ?
-         WHERE id = ?`,
-        [cleanEnergy, cleanAmount, cleanDuration, cleanSoc, session.id]
-      );
-
-      // Make Charger Available
-      if (session.charger_id) {
-        await connection.execute("UPDATE chargers SET status = 'AVAILABLE' WHERE id = ?", [session.charger_id]);
+      if (session?.id) {
+        // Update existing session
+        await connection.execute(
+          `UPDATE charging_sessions 
+           SET session_status = 'COMPLETED', end_time = NOW(), final_meter = energy_kwh, energy_kwh = ?, total_amount = ?, duration_minutes = ?, actual_charging_minutes = ?, battery_soc = ?
+           WHERE id = ?`,
+          [cleanEnergy, cleanAmount, cleanDuration, cleanDuration, cleanSoc, session.id]
+        );
+      } else if (bookingRow) {
+        // Insert completed session record if none existed before
+        const genSessionId = await generateSessionId(connection);
+        const [inserted] = await connection.execute(
+          `INSERT INTO charging_sessions 
+           (session_id, booking_id, user_id, vehicle_id, station_id, charger_id, connector_id, start_time, end_time, initial_meter, final_meter, energy_kwh, total_amount, duration_minutes, actual_charging_minutes, battery_soc, session_status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0.00, ?, ?, ?, ?, ?, ?, 'COMPLETED')`,
+          [
+            genSessionId,
+            bookingRow.id,
+            bookingRow.user_id,
+            targetVehicleId || null,
+            targetStationId,
+            targetChargerId,
+            targetConnectorId || null,
+            cleanEnergy,
+            cleanEnergy,
+            cleanAmount,
+            cleanDuration,
+            cleanDuration,
+            cleanSoc,
+          ]
+        );
+        activeSessionId = inserted.insertId;
       }
 
-      // Update Booking
-      if (session.booking_id) {
-        await connection.execute("UPDATE bookings SET booking_status = 'COMPLETED' WHERE id = ?", [session.booking_id]);
+      // Make Charger & Connector Available Immediately
+      if (targetChargerId) {
+        await connection.execute("UPDATE chargers SET status = 'AVAILABLE' WHERE id = ?", [targetChargerId]);
+      }
+      if (targetConnectorId) {
+        await connection.execute("UPDATE station_connectors SET status = 'AVAILABLE' WHERE id = ?", [targetConnectorId]);
       }
 
-      // Update Vehicle Latest Known SOC in MySQL on session completion
-      if (session.vehicle_id) {
-        const [vehRow] = await connection.execute("SELECT current_soc_percent FROM vehicles WHERE id = ?", [session.vehicle_id]);
+      // Update Booking with actual completion status
+      if (targetBookingNumericId) {
+        await connection.execute(
+          `UPDATE bookings 
+           SET booking_status = 'COMPLETED', payment_status = 'PAID', actual_end_time = NOW(), actual_charging_minutes = ?, updated_at = NOW()
+           WHERE id = ?`,
+          [cleanDuration, targetBookingNumericId]
+        );
+      }
+
+      // Update Vehicle Latest Known SOC in MySQL
+      if (targetVehicleId) {
+        const [vehRow] = await connection.execute("SELECT current_soc_percent FROM vehicles WHERE id = ?", [targetVehicleId]);
         const prevSoc = vehRow.length > 0 && vehRow[0].current_soc_percent !== null ? parseFloat(vehRow[0].current_soc_percent) : null;
         const finalSoc = cleanSoc || 100.0;
 
         await connection.execute(
           "UPDATE vehicles SET current_soc_percent = ?, soc_updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-          [finalSoc, session.vehicle_id]
+          [finalSoc, targetVehicleId]
         );
 
         await connection.execute(
           `INSERT INTO vehicle_soc_history (vehicle_id, previous_soc_percent, new_soc_percent, source, recorded_at)
            VALUES (?, ?, ?, 'CHARGING_COMPLETED', CURRENT_TIMESTAMP)`,
-          [session.vehicle_id, prevSoc, finalSoc]
+          [targetVehicleId, prevSoc, finalSoc]
         );
       }
     });
 
-    const fullRows = await query(`${SESSIONS_JOIN_QUERY} WHERE cs.id = ?`, [session.id]);
-    const sessionData = fullRows.length > 0 ? formatSession(fullRows[0]) : session;
+    let sessionData = null;
+    if (activeSessionId) {
+      const fullRows = await query(`${SESSIONS_JOIN_QUERY} WHERE cs.id = ?`, [activeSessionId]);
+      sessionData = fullRows.length > 0 ? formatSession(fullRows[0]) : session;
+    }
 
     try {
-      emitSessionStopped(sessionData);
-    } catch (e) {}
+      if (sessionData) {
+        emitSessionStopped(sessionData);
+      }
+      if (targetChargerId) {
+        emitChargerStatusChanged({
+          id: targetChargerId,
+          chargerId: targetChargerId,
+          stationId: targetStationId,
+          status: "AVAILABLE",
+          operationalStatus: "AVAILABLE",
+        });
+      }
+      if (targetBookingNumericId) {
+        const bRows = await query(`SELECT b.*, u.name as customer_name, s.station_name, v.model FROM bookings b JOIN users u ON b.user_id = u.id JOIN stations s ON b.station_id = s.id LEFT JOIN vehicles v ON b.vehicle_id = v.id WHERE b.id = ?`, [targetBookingNumericId]);
+        if (bRows.length > 0) {
+          emitBookingCompleted(bRows[0]);
+          emitBookingUpdated(bRows[0]);
+        }
+      }
+    } catch (e) {
+      console.warn("Socket notification warning on session stop:", e.message);
+    }
 
     res.json({
       success: true,
@@ -431,7 +544,7 @@ export const updateLiveTelemetry = async (req, res) => {
   try {
     const { sessionId } = req.params;
     const { current_battery, energy_delivered, current_cost, duration_minutes } = req.body;
-    
+
     if (sessionId) {
       const isNum = /^\d+$/.test(sessionId);
       await query(
@@ -563,9 +676,15 @@ export const calculateChargingEstimate = async ({
     }
   }
 
-  // 5. Calculate Energy & Realistic Piecewise Charging Time
+  // 5. Calculate Energy & Dynamic Charging Time Metrics
   const socDifference = Math.max(0, tgtSoc - curSoc);
   const energyRequiredKwh = Math.round((batteryCapacityKwh * (socDifference / 100)) * 100) / 100;
+
+  const maxDeliverablePower = Math.min(vehicleMaxPowerKw, connectorPowerKw, stationMaxPowerKw) || 60.0;
+
+  // Theoretical Time = Energy / Power (hours) -> converted to minutes
+  const theoreticalHours = maxDeliverablePower > 0 ? (energyRequiredKwh / maxDeliverablePower) : 0;
+  const theoreticalMinutes = Math.max(1, Math.round(theoreticalHours * 60));
 
   // Realistic Piecewise Charging Curve Efficiency Factors
   const intervals = [
@@ -575,7 +694,6 @@ export const calculateChargingEstimate = async ({
     { start: 90, end: 100, factor: 0.50 },
   ];
 
-  const maxDeliverablePower = Math.min(vehicleMaxPowerKw, connectorPowerKw, stationMaxPowerKw);
   let totalChargingHours = 0;
   let totalWeightedFactor = 0;
 
@@ -593,6 +711,7 @@ export const calculateChargingEstimate = async ({
     }
   }
 
+  // Estimated charging time based on charging efficiency
   const estimatedMinutes = Math.max(1, Math.round(totalChargingHours * 60));
   const effectiveEfficiency = totalWeightedFactor > 0 ? totalWeightedFactor : (efficiencyPercent / 100 || 0.90);
   const chargingEfficiency = Math.round(effectiveEfficiency * 100) / 100;
@@ -600,6 +719,16 @@ export const calculateChargingEstimate = async ({
   const effectivePowerKw = Math.round((maxDeliverablePower * (totalWeightedFactor || 0.90)) * 10) / 10;
   const estimatedGridEnergyKwh = Math.round((energyRequiredKwh / effectiveEfficiency) * 100) / 100;
   const estimatedEnergyCost = Math.round((energyRequiredKwh * tariffPerKwh) * 100) / 100;
+
+  // 6. Dynamic Slot Optimization:
+  // Round UP to the nearest 5-minute interval
+  const recommendedDurationMinutes = Math.max(5, Math.ceil(estimatedMinutes / 5) * 5);
+
+  // Configurable Safety Buffer (Default: 5 minutes)
+  const safetyBufferMinutes = 5;
+
+  // Total Reserved Duration = Recommended Duration + Safety Buffer
+  const reservedDurationMinutes = recommendedDurationMinutes + safetyBufferMinutes;
 
   let estimatedChargingTime = `${estimatedMinutes} minutes`;
   if (estimatedMinutes >= 60) {
@@ -627,8 +756,13 @@ export const calculateChargingEstimate = async ({
     socDifference,
     batteryCapacityKwh,
     battery_capacity_kwh: batteryCapacityKwh,
+    batteryRequiredKwh: energyRequiredKwh,
     energyRequiredKwh,
     energy_required_kwh: energyRequiredKwh,
+    chargerPowerKw: maxDeliverablePower,
+    charger_power_kw: maxDeliverablePower,
+    theoreticalMinutes,
+    theoretical_minutes: theoreticalMinutes,
     chargingEfficiencyPercent: efficiencyPercent,
     chargingEfficiency,
     estimatedGridEnergyKwh,
@@ -645,13 +779,29 @@ export const calculateChargingEstimate = async ({
     subtotal,
     totalEstimatedAmount,
     total_amount: totalEstimatedAmount,
+    estimatedCost: totalEstimatedAmount,
     effectivePowerKw,
     effective_charging_power_kw: effectivePowerKw,
+
+    // Dynamic Slot Duration Properties
+    estimatedMinutes,
     estimatedDurationMinutes: estimatedMinutes,
+    estimatedChargingMinutes: estimatedMinutes,
+    estimated_charging_minutes: estimatedMinutes,
+    recommendedDurationMinutes,
+    recommended_duration_minutes: recommendedDurationMinutes,
+    safetyBufferMinutes,
+    safety_buffer_minutes: safetyBufferMinutes,
+    bufferMinutes: safetyBufferMinutes,
+    buffer_minutes: safetyBufferMinutes,
+    reservedDurationMinutes,
+    reserved_duration_minutes: reservedDurationMinutes,
+    durationMinutes: reservedDurationMinutes,
+    duration_minutes: reservedDurationMinutes,
     estimatedChargingTime,
     estimated_charging_time: estimatedChargingTime,
     isEstimate: true,
-    notice: "Charging cost is an estimate because live vehicle/charger energy telemetry is not connected.",
+    notice: "Charging time is calculated dynamically based on your vehicle specs and charger power with 90% efficiency and a 5-minute safety buffer.",
   };
 };
 

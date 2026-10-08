@@ -43,6 +43,14 @@ const calculateEndTime = (startStr, durationMins) => {
   return `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
 };
 
+// Helper for local YYYY-MM-DD
+const getLocalDateStr = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 export default function SlotSelection() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -58,7 +66,7 @@ export default function SlotSelection() {
     }
   }, [location.state]);
 
-  const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(() => getLocalDateStr(new Date()));
   const [timelineData, setTimelineData] = useState(null);
   const [loadingTimeline, setLoadingTimeline] = useState(true);
   const [toast, setToast] = useState({ message: "", type: "success" });
@@ -210,7 +218,7 @@ export default function SlotSelection() {
           <Calendar size={16} className="text-emerald-500 ml-2" />
           <input
             type="date"
-            min={new Date().toISOString().split("T")[0]}
+            min={getLocalDateStr(new Date())}
             value={date}
             onChange={(e) => setDate(e.target.value)}
             className="theme-input px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer"

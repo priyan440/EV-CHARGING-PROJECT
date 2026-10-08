@@ -9,20 +9,49 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, "../.env") });
 dotenv.config();
 
+// Build pool configuration supporting both connection URI (DATABASE_URL / MYSQL_URL) and individual parameters
+const getPoolConfig = () => {
+  const dbUrl = process.env.DATABASE_URL || process.env.MYSQL_URL;
+  const isCloudHost = process.env.DB_HOST && !["localhost", "127.0.0.1"].includes(process.env.DB_HOST);
+  const useSsl = process.env.DB_SSL === "true" || process.env.MYSQL_SSL === "true" || (isCloudHost && process.env.DB_SSL !== "false");
+
+  const sslConfig = useSsl
+    ? {
+        rejectUnauthorized: false,
+      }
+    : undefined;
+
+  if (dbUrl) {
+    return {
+      uri: dbUrl,
+      waitForConnections: true,
+      connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || "10", 10),
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0,
+      multipleStatements: true,
+      ...(sslConfig ? { ssl: sslConfig } : {}),
+    };
+  }
+
+  return {
+    host: process.env.DB_HOST || "localhost",
+    user: process.env.DB_USER || "root",
+    password: process.env.DB_PASSWORD || "root123",
+    database: process.env.DB_NAME || "ev_charging_system",
+    port: parseInt(process.env.DB_PORT || "3306", 10),
+    waitForConnections: true,
+    connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || "10", 10),
+    queueLimit: 0,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 0,
+    multipleStatements: true,
+    ...(sslConfig ? { ssl: sslConfig } : {}),
+  };
+};
+
 // Create MySQL Connection Pool (The ONLY Persistent Database for the Application)
-export const pool = mysql.createPool({
-  host: process.env.DB_HOST || "localhost",
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD || "root123",
-  database: process.env.DB_NAME || "ev_charging_system",
-  port: parseInt(process.env.DB_PORT || "3306", 10),
-  waitForConnections: true,
-  connectionLimit: 20,
-  queueLimit: 0,
-  enableKeepAlive: true,
-  keepAliveInitialDelay: 0,
-  multipleStatements: true,
-});
+export const pool = mysql.createPool(getPoolConfig());
 
 // Helper for executing single SQL queries safely
 export const query = async (sql, params = []) => {

@@ -111,13 +111,6 @@ export default function ForgotPassword() {
                 If an account exists for <span className="text-emerald-600 dark:text-emerald-400 font-mono font-bold">{identifier}</span>, password reset credentials have been routed to the registered address.
               </p>
             </div>
-
-            <div className="p-3 bg-slate-50 dark:bg-slate-900/80 rounded-xl border border-slate-200 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-400">
-              💡 For immediate testing in this development environment, default passwords are:
-              <div className="font-mono text-emerald-600 dark:text-emerald-400 font-bold mt-1">
-                Customer: password123 | Owner: ownerpassword | Admin: admin123
-              </div>
-            </div>
           </motion.div>
         )}
 

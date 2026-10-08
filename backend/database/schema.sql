@@ -402,5 +402,33 @@ CREATE TABLE IF NOT EXISTS complaints (
     CONSTRAINT fk_complaints_assigned FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ------------------------------------------------------------
+-- 14. EMERGENCY REQUESTS TABLE
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS emergency_requests (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    request_id VARCHAR(50) UNIQUE NOT NULL,
+    user_id INT NOT NULL,
+    vehicle_model VARCHAR(150) NULL,
+    vehicle_number VARCHAR(50) NULL,
+    contact_number VARCHAR(30) NULL,
+    emergency_type ENUM('BATTERY_DEPLETED', 'VEHICLE_BREAKDOWN', 'CHARGING_FAILURE', 'ACCIDENT', 'OTHER') DEFAULT 'BATTERY_DEPLETED',
+    current_soc INT DEFAULT 8,
+    latitude DECIMAL(10, 7) NOT NULL DEFAULT 13.0827,
+    longitude DECIMAL(10, 7) NOT NULL DEFAULT 80.2707,
+    location_address TEXT NULL,
+    status ENUM('PENDING', 'DISPATCHED', 'IN_PROGRESS', 'RESOLVED', 'CANCELLED') DEFAULT 'PENDING',
+    assigned_unit VARCHAR(100) DEFAULT 'Rescue Unit 01',
+    eta_minutes INT DEFAULT 20,
+    notes TEXT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_emergency_req_id (request_id),
+    INDEX idx_emergency_user_id (user_id),
+    INDEX idx_emergency_status (status),
+    CONSTRAINT fk_emergency_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
+
 

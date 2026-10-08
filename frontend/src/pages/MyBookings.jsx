@@ -24,6 +24,7 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 import { bookingService } from "../services/bookingService";
 import { startChargingSession } from "../services/chargingService";
+import { socketService } from "../services/socketService";
 import QRCodeModal from "../components/QRCodeModal";
 import InvoiceModal from "../components/InvoiceModal";
 
@@ -65,6 +66,47 @@ export default function MyBookings() {
 
   useEffect(() => {
     fetchMyBookings();
+
+    const onBookingChanged = () => {
+      fetchMyBookings(false);
+    };
+
+    socketService.on("bookingCreated", onBookingChanged);
+    socketService.on("booking_created", onBookingChanged);
+    socketService.on("bookingUpdated", onBookingChanged);
+    socketService.on("booking_updated", onBookingChanged);
+    socketService.on("booking:updated", onBookingChanged);
+    socketService.on("booking_completed", onBookingChanged);
+    socketService.on("booking:completed", onBookingChanged);
+    socketService.on("bookingCancelled", onBookingChanged);
+    socketService.on("booking_cancelled", onBookingChanged);
+    socketService.on("session_started", onBookingChanged);
+    socketService.on("session_stopped", onBookingChanged);
+
+    window.addEventListener("booking_updated", onBookingChanged);
+    window.addEventListener("focus", onBookingChanged);
+
+    // 4-second polling safeguard to keep MySQL and browser perfectly in sync
+    const interval = setInterval(() => {
+      fetchMyBookings(false);
+    }, 4000);
+
+    return () => {
+      clearInterval(interval);
+      socketService.off("bookingCreated", onBookingChanged);
+      socketService.off("booking_created", onBookingChanged);
+      socketService.off("bookingUpdated", onBookingChanged);
+      socketService.off("booking_updated", onBookingChanged);
+      socketService.off("booking:updated", onBookingChanged);
+      socketService.off("booking_completed", onBookingChanged);
+      socketService.off("booking:completed", onBookingChanged);
+      socketService.off("bookingCancelled", onBookingChanged);
+      socketService.off("booking_cancelled", onBookingChanged);
+      socketService.off("session_started", onBookingChanged);
+      socketService.off("session_stopped", onBookingChanged);
+      window.removeEventListener("booking_updated", onBookingChanged);
+      window.removeEventListener("focus", onBookingChanged);
+    };
   }, [currentUser]);
 
   // Handle Check-In Action
@@ -90,7 +132,7 @@ export default function MyBookings() {
     try {
       await startChargingSession(booking.bookingId);
       await fetchMyBookings(false);
-      navigate("/customer/live-charging");
+      navigate(`/sessions/${booking.bookingId}`, { state: { booking } });
     } catch (err) {
       alert(err.message || "Failed to start charging session.");
     } finally {
@@ -472,7 +514,7 @@ export default function MyBookings() {
 
                   {isActive && (
                     <button
-                      onClick={() => navigate("/customer/live-charging")}
+                      onClick={() => navigate(`/sessions/${b.bookingId}`, { state: { booking: b } })}
                       className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/30 cursor-pointer"
                     >
                       <Zap size={15} className="fill-current" /> VIEW LIVE CHARGING <ArrowRight size={14} />

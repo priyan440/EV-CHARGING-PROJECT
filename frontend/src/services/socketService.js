@@ -185,6 +185,23 @@ class SocketService {
     };
   }
 
+  onStationUpdated(callback) {
+    if (!this.socket) this.connect();
+    const handler = (payload) => {
+      const data = payload?.station || payload;
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("station_updated", { detail: data }));
+      }
+      callback(data);
+    };
+    this.socket.on("station_updated", handler);
+    this.socket.on("station:updated", handler);
+    return () => {
+      this.socket.off("station_updated", handler);
+      this.socket.off("station:updated", handler);
+    };
+  }
+
   joinUser(userId) {
     if (this.socket && this.socket.connected && userId) {
       this.socket.emit("join_user", userId);
@@ -206,6 +223,31 @@ class SocketService {
 
   subscribeStatus(callback) {
     return this.onStatusChange(callback);
+  }
+
+  on(event, callback) {
+    if (!this.socket) this.connect();
+    if (this.socket) {
+      this.socket.on(event, callback);
+    }
+    return () => this.off(event, callback);
+  }
+
+  off(event, callback) {
+    if (this.socket) {
+      if (callback) {
+        this.socket.off(event, callback);
+      } else {
+        this.socket.off(event);
+      }
+    }
+  }
+
+  emit(event, ...args) {
+    if (!this.socket) this.connect();
+    if (this.socket) {
+      this.socket.emit(event, ...args);
+    }
   }
 
   disconnect() {

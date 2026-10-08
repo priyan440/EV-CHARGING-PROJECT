@@ -9,6 +9,7 @@ import {
   getOwnerChargers,
   createOwnerCharger,
   updateOwnerCharger,
+  deleteOwnerCharger,
   setChargerSimulatorControl,
   getOwnerBookings,
   updateBookingStatus,
@@ -20,6 +21,7 @@ import {
   getOwnerTariffs,
   createOwnerTariff,
   updateOwnerTariff,
+  deleteOwnerTariff,
   getOwnerTransactions,
   getOwnerRevenueSummary,
   createPaymentOrder,
@@ -29,6 +31,7 @@ import {
   updateMaintenanceTicket,
   getOwnerFaults,
   resolveOwnerFault,
+  getOwnerTechnicians,
   getStationLoadProfile,
   updateSmartLoadCapacity,
   getOwnerAnalytics,
@@ -70,6 +73,7 @@ router.delete("/stations/:stationId", deleteOwnerStation);
 router.get("/chargers", getOwnerChargers);
 router.post("/chargers", createOwnerCharger);
 router.put("/chargers/:chargerId", updateOwnerCharger);
+router.delete("/chargers/:chargerId", deleteOwnerCharger);
 router.post("/chargers/:chargerId/simulator", setChargerSimulatorControl);
 router.post("/chargers/:chargerId/simulate-status", setChargerSimulateStatus);
 router.post("/chargers/heartbeat", updateChargerHeartbeat);
@@ -93,6 +97,7 @@ router.get("/customers", getOwnerCustomers);
 router.get("/tariffs", getOwnerTariffs);
 router.post("/tariffs", createOwnerTariff);
 router.put("/tariffs/:tariffId", updateOwnerTariff);
+router.delete("/tariffs/:tariffId", deleteOwnerTariff);
 
 // 8. Payments & Revenue
 router.get("/revenue", getOwnerRevenueSummary);
@@ -114,6 +119,7 @@ router.put("/maintenance/tickets/:ticketId", updateMaintenanceTicket);
 router.patch("/maintenance/tickets/:ticketId", updateMaintenanceTicket);
 router.get("/faults", getOwnerFaults);
 router.put("/faults/:faultId/resolve", resolveOwnerFault);
+router.get("/technicians", getOwnerTechnicians);
 
 // 10. Smart Load Management
 router.get("/smart-load/:stationId", getStationLoadProfile);

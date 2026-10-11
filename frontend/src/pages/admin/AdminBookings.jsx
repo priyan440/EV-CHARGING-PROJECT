@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { adminService } from "../../services/adminService";
 import { socketService } from "../../services/socketService";
+import Pagination from "../../components/Pagination";
 
 export default function AdminBookings() {
   const [bookings, setBookings] = useState([]);
@@ -33,7 +34,8 @@ export default function AdminBookings() {
   const [activeTab, setActiveTab] = useState("ALL");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 8;
+  const [itemsPerPage, setItemsPerPage] = useState(8);
+
 
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -383,30 +385,18 @@ export default function AdminBookings() {
         )}
 
         {/* Pagination Bar */}
-        {filtered.length > itemsPerPage && (
-          <div className="p-4 border-t border-[var(--border-subtle)] flex items-center justify-between text-xs text-[var(--text-muted)]">
-            <span>
-              Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filtered.length)} of {filtered.length} bookings
-            </span>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="p-1.5 rounded-lg border border-[var(--border-subtle)] disabled:opacity-40 cursor-pointer hover:bg-[var(--bg-surface-raised)]"
-              >
-                <ChevronLeft size={14} />
-              </button>
-              <span className="font-bold px-2">Page {currentPage} of {totalPages}</span>
-              <button
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="p-1.5 rounded-lg border border-[var(--border-subtle)] disabled:opacity-40 cursor-pointer hover:bg-[var(--bg-surface-raised)]"
-              >
-                <ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
-        )}
+        <Pagination
+          page={Math.min(currentPage, Math.ceil(filtered.length / itemsPerPage) || 1)}
+          totalPages={Math.ceil(filtered.length / itemsPerPage) || 1}
+          totalItems={filtered.length}
+          limit={itemsPerPage}
+          onPageChange={(p) => setCurrentPage(p)}
+          onLimitChange={(l) => {
+            setItemsPerPage(l);
+            setCurrentPage(1);
+          }}
+          limitOptions={[8, 16, 24, 50]}
+        />
       </div>
 
       {/* ==================================================== */}

@@ -7,10 +7,20 @@ import {
   emitBookingUpdated,
   emitPaymentUpdated,
   emitMaintenanceUpdated,
+  emitFaultDetected,
+  emitStationUpdated,
 } from "../services/socketService.js";
+import {
+  deriveChargerStatus,
+  isChargerOnline,
+  recordAuditLog,
+  CHARGER_STATUSES,
+  OWNER_STATUSES,
+  STATION_APPROVAL_STATUSES,
+} from "../utils/statusMapping.js";
 
 // Helper: Format sequential IDs safely from MySQL table
-const getNextSequenceId = async (prefix, table, column = "id") => {
+const getNextSequenceId = async (prefix, table) => {
   try {
     const rows = await query(`SELECT COALESCE(MAX(id), 0) as maxId FROM \`${table}\``);
     const nextNum = (rows[0]?.maxId || 0) + 1;
@@ -27,50 +37,39 @@ const getNextSequenceId = async (prefix, table, column = "id") => {
  */
 export const getStats = async (req, res) => {
   try {
-    // 1. Total Customers (Role: USER or CUSTOMER)
     const [userCount] = await query("SELECT COUNT(*) as count FROM users WHERE role IN ('USER', 'CUSTOMER')");
-    
-    // 2. Total Station Owners (Role: STATION_OWNER or OWNER)
     const [ownerCount] = await query("SELECT COUNT(*) as count FROM users WHERE role IN ('STATION_OWNER', 'OWNER')");
-
-    // 3. Total Technicians
+    const [verifiedOwnerCount] = await query("SELECT COUNT(*) as count FROM users WHERE role IN ('STATION_OWNER', 'OWNER') AND status = 'ACTIVE'");
+    const [pendingOwnerCount] = await query("SELECT COUNT(*) as count FROM users WHERE role IN ('STATION_OWNER', 'OWNER') AND status = 'PENDING'");
     const [techCount] = await query("SELECT COUNT(*) as count FROM users WHERE role IN ('TECHNICIAN', 'TECH')");
-
-    // 4. Total Registered Vehicles
     const [vehicleCount] = await query("SELECT COUNT(*) as count FROM vehicles");
-    
-    // 5. Total Stations & Active Stations & Pending Approvals
+
     const [stationCount] = await query("SELECT COUNT(*) as count FROM stations");
     const [activeStationCount] = await query("SELECT COUNT(*) as count FROM stations WHERE status = 'ACTIVE' AND approval_status = 'APPROVED'");
     const [pendingStationCount] = await query("SELECT COUNT(*) as count FROM stations WHERE approval_status = 'PENDING' OR status = 'PENDING'");
-    
-    // 6. Total, Available, Charging Chargers
+    const [rejectedStationCount] = await query("SELECT COUNT(*) as count FROM stations WHERE approval_status = 'REJECTED'");
+
     const [chargerCount] = await query("SELECT COUNT(*) as count FROM chargers");
     const [availableChargerCount] = await query("SELECT COUNT(*) as count FROM chargers WHERE status = 'AVAILABLE'");
     const [chargingChargerCount] = await query("SELECT COUNT(*) as count FROM chargers WHERE status IN ('CHARGING', 'OCCUPIED')");
     const [faultedChargerCount] = await query("SELECT COUNT(*) as count FROM chargers WHERE status IN ('FAULTED', 'MAINTENANCE')");
+    const [offlineChargerCount] = await query(
+      "SELECT COUNT(*) as count FROM chargers WHERE status = 'OFFLINE' OR (status != 'CHARGING' AND is_simulated = 0 AND (last_heartbeat IS NULL OR TIMESTAMPDIFF(SECOND, last_heartbeat, NOW()) > heartbeat_timeout_seconds))"
+    );
 
-    // 7. Today's Bookings
     const [todayBookingCount] = await query(
       "SELECT COUNT(*) as count FROM bookings WHERE DATE(booking_date) = CURRENT_DATE() OR DATE(created_at) = CURRENT_DATE()"
     );
-    
-    // 8. Active Bookings
     const [activeBookingCount] = await query(
       "SELECT COUNT(*) as count FROM bookings WHERE booking_status IN ('CONFIRMED', 'ACTIVE', 'IN_PROGRESS', 'PROTECTED', 'CHECKED_IN')"
     );
-    
-    // 9. Completed Bookings
     const [completedBookingCount] = await query(
       "SELECT COUNT(*) as count FROM bookings WHERE booking_status = 'COMPLETED'"
     );
-    
-    // 10. Cancelled Bookings
     const [cancelledBookingCount] = await query(
       "SELECT COUNT(*) as count FROM bookings WHERE booking_status = 'CANCELLED'"
     );
-    
-    // 11. Total & Today's Platform Revenue
+
     const [revenueSum] = await query(
       "SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE payment_status = 'SUCCESS'"
     );
@@ -80,19 +79,19 @@ export const getStats = async (req, res) => {
     const [successPayCount] = await query(
       "SELECT COUNT(*) as count FROM payments WHERE payment_status = 'SUCCESS'"
     );
+    const [refundedPayCount] = await query(
+      "SELECT COUNT(*) as count FROM payments WHERE payment_status = 'REFUNDED'"
+    );
 
-    // 12. Maintenance Tickets
     const [maintCount] = await query("SELECT COUNT(*) as count FROM maintenance_tickets WHERE status NOT IN ('RESOLVED', 'CLOSED')");
 
-    // 13. Active Charging Sessions
     const [activeSessionCount] = await query("SELECT COUNT(*) as count FROM charging_sessions WHERE session_status IN ('CHARGING', 'STARTED', 'ACTIVE')");
     const [completedSessionCount] = await query("SELECT COUNT(*) as count FROM charging_sessions WHERE session_status = 'COMPLETED'");
+    const [totalEnergySum] = await query("SELECT COALESCE(SUM(energy_kwh), 0) as totalEnergy FROM charging_sessions");
 
-    // 14. Power Capacity Aggregations
-    const [powerSum] = await query("SELECT COALESCE(SUM(max_power), 0) as totalMaxPower FROM stations");
+    const [powerSum] = await query("SELECT COALESCE(SUM(max_power), 0) as totalMaxPower FROM stations WHERE approval_status = 'APPROVED'");
     const totalCapacityKw = parseFloat(powerSum?.totalMaxPower) || 0;
 
-    // Station Capacity Breakdown
     const stationCapacityList = await query(
       `SELECT s.id, s.station_id, s.station_name, s.city, s.max_power, s.total_slots, s.available_slots, s.status, s.approval_status,
               u.name as owner_name, u.email as owner_email,
@@ -105,7 +104,6 @@ export const getStats = async (req, res) => {
        ORDER BY s.id ASC`
     );
 
-    // Recent 10 Bookings
     const rawRecentBookings = await query(
       `SELECT b.*, u.name as customer_name, u.email as customer_email, u.phone as customer_phone,
               s.station_name, s.address as station_address, s.station_id as station_id_code,
@@ -120,7 +118,6 @@ export const getStats = async (req, res) => {
     );
     const recentBookings = rawRecentBookings.map((b) => formatBooking(b));
 
-    // Monthly revenue aggregation
     const monthlyStats = await query(
       `SELECT DATE_FORMAT(COALESCE(paid_at, created_at), '%b') as month,
               COUNT(id) as bookings,
@@ -137,6 +134,8 @@ export const getStats = async (req, res) => {
         totalUsers: (userCount?.count || 0) + (ownerCount?.count || 0) + (techCount?.count || 0),
         totalCustomers: userCount?.count || 0,
         totalStationOwners: ownerCount?.count || 0,
+        verifiedOwners: verifiedOwnerCount?.count || 0,
+        pendingOwners: pendingOwnerCount?.count || 0,
         totalOwners: ownerCount?.count || 0,
         totalTechnicians: techCount?.count || 0,
         totalVehicles: vehicleCount?.count || 0,
@@ -145,6 +144,7 @@ export const getStats = async (req, res) => {
         activeStations: activeStationCount?.count || 0,
         pendingApprovals: pendingStationCount?.count || 0,
         pendingStations: pendingStationCount?.count || 0,
+        rejectedStations: rejectedStationCount?.count || 0,
         totalChargers: chargerCount?.count || 0,
         totalChargingSlots: chargerCount?.count || 0,
         totalConnectors: chargerCount?.count || 0,
@@ -153,19 +153,23 @@ export const getStats = async (req, res) => {
         chargingChargers: chargingChargerCount?.count || 0,
         chargingNow: chargingChargerCount?.count || 0,
         faultedChargers: faultedChargerCount?.count || 0,
+        offlineChargers: offlineChargerCount?.count || 0,
         occupiedSlots: Math.max(0, (chargerCount?.count || 0) - (availableChargerCount?.count || 0)),
         activeSessions: activeSessionCount?.count || 0,
         completedSessions: completedSessionCount?.count || 0,
+        totalEnergyKwh: parseFloat(totalEnergySum?.totalEnergy) || 0,
         todayBookings: todayBookingCount?.count || 0,
         activeBookings: activeBookingCount?.count || 0,
         completedBookings: completedBookingCount?.count || 0,
         cancelledBookings: cancelledBookingCount?.count || 0,
         totalBookings: (activeBookingCount?.count || 0) + (completedBookingCount?.count || 0) + (cancelledBookingCount?.count || 0),
         successfulPayments: successPayCount?.count || 0,
+        refundedPayments: refundedPayCount?.count || 0,
         todayRevenue: parseFloat(todayRevenueSum?.total) || 0,
         totalRevenue: parseFloat(revenueSum?.total) || 0,
         revenue: parseFloat(revenueSum?.total) || 0,
         activeFaults: maintCount?.count || 0,
+        unresolvedFaults: maintCount?.count || 0,
         pendingMaintenance: maintCount?.count || 0,
         maintenanceTickets: maintCount?.count || 0,
         totalMaxPower: totalCapacityKw,
@@ -181,162 +185,120 @@ export const getStats = async (req, res) => {
 };
 
 /**
- * 2. CUSTOMER MANAGEMENT (FULL CRUD)
- * GET /api/admin/customers & GET /api/admin/users
+ * 2. CUSTOMER / USER MANAGEMENT (CRUD + Pagination)
  */
 export const getAllCustomers = async (req, res) => {
   try {
-    const { search, status, sort } = req.query;
-    let sql = `
-      SELECT u.id, u.user_id, u.name, u.email, u.phone, u.role, u.status, u.city, u.address, u.state, u.pincode, u.created_at,
-             v.id as vehicle_primary_id, v.vehicle_id, v.registration_number, v.vehicle_type, v.brand, v.model, v.battery_capacity, v.connector_type,
-             COALESCE((SELECT COUNT(*) FROM bookings b WHERE b.user_id = u.id), 0) as booking_count,
-             COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.user_id = u.id AND p.payment_status = 'SUCCESS'), 0) as total_spent,
-             (SELECT MAX(cs.start_time) FROM charging_sessions cs WHERE cs.user_id = u.id) as last_charging_session
-      FROM users u
-      LEFT JOIN (
-        SELECT v1.* FROM vehicles v1
-        INNER JOIN (SELECT user_id, MIN(id) as min_id FROM vehicles GROUP BY user_id) v2 ON v1.id = v2.min_id
-      ) v ON u.id = v.user_id
-      WHERE u.role IN ('USER', 'CUSTOMER')
-    `;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
+    const { search, role, status } = req.query;
+
+    let whereClause = "WHERE 1=1";
     const params = [];
 
+    if (role && role !== "ALL") {
+      whereClause += " AND u.role = ?";
+      params.push(role.toUpperCase());
+    }
+
     if (status && status !== "ALL") {
-      sql += ` AND u.status = ?`;
+      whereClause += " AND u.status = ?";
       params.push(status.toUpperCase());
     }
 
     if (search && search.trim()) {
       const q = `%${search.trim().toLowerCase()}%`;
-      sql += ` AND (LOWER(u.user_id) LIKE ? OR LOWER(u.name) LIKE ? OR LOWER(u.email) LIKE ? OR LOWER(u.phone) LIKE ? OR LOWER(v.registration_number) LIKE ?)`;
-      params.push(q, q, q, q, q);
+      whereClause += " AND (LOWER(u.name) LIKE ? OR LOWER(u.email) LIKE ? OR LOWER(u.user_id) LIKE ? OR LOWER(u.phone) LIKE ?)";
+      params.push(q, q, q, q);
     }
 
-    sql += ` ORDER BY u.id DESC`;
+    const [countRow] = await query(`SELECT COUNT(*) as total FROM users u ${whereClause}`, params);
+    const total = countRow?.total || 0;
 
-    const rows = await query(sql, params);
+    const users = await query(
+      `SELECT u.id, u.user_id, u.name, u.email, u.phone, u.role, u.status, u.wallet_balance, u.company_name, u.city, u.state, u.created_at,
+              (SELECT COUNT(*) FROM vehicles v WHERE v.user_id = u.id) as vehicle_count,
+              (SELECT COUNT(*) FROM bookings b WHERE b.user_id = u.id) as booking_count
+       FROM users u
+       ${whereClause}
+       ORDER BY u.id DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
 
-    const formatted = rows.map((u) => {
-      const canonicalId = u.user_id || `CUS${String(u.id).padStart(6, "0")}`;
-      return {
-        id: u.id,
-        counterId: canonicalId,
-        customerId: canonicalId,
-        user_id: canonicalId,
-        name: u.name,
-        email: u.email,
-        mobile: u.phone || "—",
-        phone: u.phone || "—",
-        city: u.city || "Chennai",
-        address: u.address || "—",
-        state: u.state || "Tamil Nadu",
-        pincode: u.pincode || "600001",
-        role: u.role,
-        status: u.status || "ACTIVE",
-        bookingCount: parseInt(u.booking_count, 10) || 0,
-        totalSpent: parseFloat(u.total_spent) || 0,
-        lastChargingSession: u.last_charging_session || null,
-        registrationDate: u.created_at,
-        createdAt: u.created_at,
-        vehicle: u.registration_number
-          ? {
-              id: u.vehicle_primary_id,
-              vehicleId: u.vehicle_id,
-              number: u.registration_number,
-              registrationNumber: u.registration_number,
-              type: u.vehicle_type || "Electric 4W",
-              brand: u.brand || "Tata Motors",
-              model: u.model || "Nexon EV",
-              batteryCapacity: parseFloat(u.battery_capacity) || 40.5,
-              connectorType: u.connector_type || "CCS2",
-            }
-          : null,
-      };
+    const formatted = users.map((u) => ({
+      id: u.id,
+      user_id: u.user_id || `USR${String(u.id).padStart(6, "0")}`,
+      counterId: u.user_id || `USR${String(u.id).padStart(6, "0")}`,
+      customerId: u.user_id || `USR${String(u.id).padStart(6, "0")}`,
+      name: u.name,
+      email: u.email,
+      phone: u.phone || "—",
+      role: u.role,
+      status: u.status || "ACTIVE",
+      walletBalance: parseFloat(u.wallet_balance) || 0,
+      wallet_balance: parseFloat(u.wallet_balance) || 0,
+      companyName: u.company_name || "—",
+      city: u.city || "Chennai",
+      state: u.state || "Tamil Nadu",
+      vehicleCount: parseInt(u.vehicle_count, 10) || 0,
+      bookingCount: parseInt(u.booking_count, 10) || 0,
+      createdAt: u.created_at,
+    }));
+
+    res.json({
+      success: true,
+      count: formatted.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      data: formatted,
+      users: formatted,
+      customers: formatted,
     });
-
-    res.json({ success: true, count: formatted.length, data: formatted, users: formatted, customers: formatted });
   } catch (error) {
-    console.error("getAllCustomers error:", error);
     res.status(500).json({ success: false, message: "Error fetching customers", error: error.message });
   }
 };
 
 export const getAllUsers = getAllCustomers;
 
-/**
- * GET /api/admin/customers/:id (Detailed Customer Profile with Vehicles, Bookings, Sessions, Payments)
- */
 export const getCustomerById = async (req, res) => {
   try {
     const { id } = req.params;
     const isNum = /^\d+$/.test(id);
-    const userRows = await query(
-      `SELECT * FROM users WHERE (id = ? OR user_id = ?) AND role IN ('USER', 'CUSTOMER')`,
+    const users = await query(
+      `SELECT u.id, u.user_id, u.name, u.email, u.phone, u.role, u.status, u.wallet_balance, u.company_name, u.address, u.city, u.state, u.pincode, u.created_at
+       FROM users u
+       WHERE u.id = ? OR u.user_id = ?`,
       [isNum ? parseInt(id, 10) : 0, id]
     );
 
-    if (!userRows || userRows.length === 0) {
-      return res.status(404).json({ success: false, message: "Customer not found." });
+    if (users.length === 0) {
+      return res.status(404).json({ success: false, message: "User not found." });
     }
-    const user = userRows[0];
-    const canonicalId = user.user_id || `CUS${String(user.id).padStart(6, "0")}`;
 
-    const vehicles = await query(`SELECT * FROM vehicles WHERE user_id = ?`, [user.id]);
-    const rawBookings = await query(
-      `SELECT b.*, s.station_name, c.charger_name, v.registration_number as vehicle_number
-       FROM bookings b
-       LEFT JOIN stations s ON b.station_id = s.id
-       LEFT JOIN chargers c ON b.charger_id = c.id
-       LEFT JOIN vehicles v ON b.vehicle_id = v.id
-       WHERE b.user_id = ?
-       ORDER BY b.id DESC LIMIT 20`,
-      [user.id]
-    );
-    const bookings = rawBookings.map((b) => formatBooking(b));
-
-    const sessions = await query(
-      `SELECT cs.*, s.station_name, c.charger_name 
-       FROM charging_sessions cs
-       LEFT JOIN stations s ON cs.station_id = s.id
-       LEFT JOIN chargers c ON cs.charger_id = c.id
-       WHERE cs.user_id = ?
-       ORDER BY cs.id DESC LIMIT 20`,
-      [user.id]
-    );
-
-    const payments = await query(
-      `SELECT * FROM payments WHERE user_id = ? ORDER BY id DESC LIMIT 20`,
-      [user.id]
-    );
-
-    const [totalSpentRow] = await query(
-      `SELECT COALESCE(SUM(amount), 0) as totalSpent FROM payments WHERE user_id = ? AND payment_status = 'SUCCESS'`,
-      [user.id]
+    const u = users[0];
+    const vehicles = await query("SELECT * FROM vehicles WHERE user_id = ?", [u.id]);
+    const bookings = await query(
+      `SELECT b.*, s.station_name, c.charger_name 
+       FROM bookings b 
+       LEFT JOIN stations s ON b.station_id = s.id 
+       LEFT JOIN chargers c ON b.charger_id = c.id 
+       WHERE b.user_id = ? 
+       ORDER BY b.id DESC LIMIT 10`,
+      [u.id]
     );
 
     res.json({
       success: true,
-      customer: {
-        id: user.id,
-        counterId: canonicalId,
-        customerId: canonicalId,
-        user_id: canonicalId,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        mobile: user.phone,
-        city: user.city,
-        address: user.address,
-        state: user.state,
-        pincode: user.pincode,
-        status: user.status,
-        createdAt: user.created_at,
-        totalSpent: parseFloat(totalSpentRow?.totalSpent) || 0,
+      data: {
+        ...u,
+        counterId: u.user_id,
+        walletBalance: parseFloat(u.wallet_balance) || 0,
         vehicles,
-        bookings,
-        sessions,
-        payments,
+        bookings: bookings.map(formatBooking),
       },
     });
   } catch (error) {
@@ -344,266 +306,219 @@ export const getCustomerById = async (req, res) => {
   }
 };
 
-/**
- * POST /api/admin/customers (Admin CREATE Customer)
- */
 export const createCustomer = async (req, res) => {
   try {
-    const {
-      name,
-      email,
-      mobile,
-      phone,
-      password = "password123",
-      city = "Chennai",
-      address = "",
-      state = "Tamil Nadu",
-      pincode = "600001",
-      vehicleNumber,
-      vehicleType = "Electric 4W",
-      vehicleModel = "Nexon EV Max",
-      brand = "Tata Motors",
-      batteryCapacity = 40.5,
-      preferredChargingType = "CCS2",
-      status = "ACTIVE",
-    } = req.body;
-
-    if (!name || !name.trim()) return res.status(400).json({ success: false, message: "Customer name is required." });
-    if (!email || !email.trim()) return res.status(400).json({ success: false, message: "Customer email is required." });
+    const { name, email, phone, password = "password123", role = "CUSTOMER", status = "ACTIVE", walletBalance = 2500.0, city = "Chennai", address = "" } = req.body;
+    if (!name || !email) {
+      return res.status(400).json({ success: false, message: "Name and Email are required." });
+    }
 
     const cleanEmail = email.trim().toLowerCase();
-    const cleanPhone = (mobile || phone || "").trim();
-
-    // Check duplicate email
     const existing = await query("SELECT id FROM users WHERE LOWER(email) = ?", [cleanEmail]);
     if (existing.length > 0) {
-      return res.status(400).json({ success: false, message: "An account with this email already exists." });
+      return res.status(400).json({ success: false, message: "A user with this email already exists." });
     }
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    const result = await transaction(async (connection) => {
-      // Find next user ID
-      const [maxRow] = await connection.execute("SELECT COALESCE(MAX(id), 0) as maxId FROM users");
-      const nextId = (maxRow[0]?.maxId || 0) + 1;
-      const user_id = `CUS${String(nextId).padStart(6, "0")}`;
+    const prefix = role.toUpperCase().startsWith("OWN") ? "OWN" : role.toUpperCase().startsWith("TECH") ? "TECH" : "CUS";
+    const user_id = await getNextSequenceId(prefix, "users");
 
-      const [userRes] = await connection.execute(
-        `INSERT INTO users (user_id, name, email, password_hash, phone, role, status, city, address, state, pincode)
-         VALUES (?, ?, ?, ?, ?, 'CUSTOMER', ?, ?, ?, ?, ?)`,
-        [user_id, name.trim(), cleanEmail, hashedPassword, cleanPhone, status, city, address, state, pincode]
-      );
-      const newUserId = userRes.insertId;
+    const insertRes = await query(
+      `INSERT INTO users (user_id, name, email, password_hash, phone, role, status, wallet_balance, city, address)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [user_id, name.trim(), cleanEmail, hashedPassword, (phone || "").trim(), role.toUpperCase(), status.toUpperCase(), parseFloat(walletBalance) || 0, city, address]
+    );
 
-      if (vehicleNumber) {
-        const [vMax] = await connection.execute("SELECT COALESCE(MAX(id), 0) as maxId FROM vehicles");
-        const nextVId = (vMax[0]?.maxId || 0) + 1;
-        const vehicle_id = `VEH${String(nextVId).padStart(6, "0")}`;
-
-        await connection.execute(
-          `INSERT INTO vehicles (vehicle_id, user_id, registration_number, vehicle_type, brand, model, battery_capacity, connector_type)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [vehicle_id, newUserId, vehicleNumber.trim().toUpperCase(), vehicleType, brand, vehicleModel, parseFloat(batteryCapacity) || 40.5, preferredChargingType]
-        );
-      }
-
-      // Record Audit Log
-      await connection.execute(
-        `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, new_value)
-         VALUES (?, 'CREATE_CUSTOMER', 'CUSTOMER', ?, ?)`,
-        [req.user?.id || newUserId, user_id, `Admin created customer ${name.trim()} (${user_id})`]
-      );
-
-      return { newUserId, user_id };
+    await recordAuditLog(query, {
+      userId: req.user?.id,
+      userRole: req.user?.role || "ADMIN",
+      action: "CREATE_USER",
+      entityType: "USER",
+      entityId: insertRes.insertId,
+      newValue: { user_id, name: name.trim(), email: cleanEmail, role },
     });
 
     res.status(201).json({
       success: true,
-      message: `Customer ${result.user_id} created successfully in MySQL!`,
-      counterId: result.user_id,
-      data: { id: result.newUserId, counterId: result.user_id, name: name.trim(), email: cleanEmail },
+      message: `User ${user_id} created successfully!`,
+      data: { id: insertRes.insertId, user_id, name: name.trim(), email: cleanEmail, role, status },
     });
   } catch (error) {
-    console.error("createCustomer error:", error);
     res.status(500).json({ success: false, message: "Error creating customer", error: error.message });
   }
 };
 
-/**
- * PUT /api/admin/customers/:id (Admin UPDATE Customer)
- */
 export const updateCustomer = async (req, res) => {
   try {
     const { id } = req.params;
-    const {
-      name,
-      email,
-      mobile,
-      phone,
-      city,
-      address,
-      state,
-      pincode,
-      status,
-      vehicleNumber,
-      brand,
-      model,
-      batteryCapacity,
-      preferredConnector,
-    } = req.body;
-
+    const { name, email, phone, role, status, walletBalance, city, address, companyName } = req.body;
     const isNum = /^\d+$/.test(id);
-    const existing = await query(
-      "SELECT * FROM users WHERE (id = ? OR user_id = ?) AND role IN ('USER', 'CUSTOMER')",
-      [isNum ? parseInt(id, 10) : 0, id]
-    );
-    if (!existing || existing.length === 0) {
-      return res.status(404).json({ success: false, message: "Customer not found." });
+
+    const existingUsers = await query("SELECT * FROM users WHERE id = ? OR user_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (existingUsers.length === 0) {
+      return res.status(404).json({ success: false, message: "User not found." });
     }
-    const user = existing[0];
+    const prev = existingUsers[0];
 
-    await transaction(async (connection) => {
-      await connection.execute(
-        `UPDATE users SET 
-           name = COALESCE(?, name),
-           email = COALESCE(?, email),
-           phone = COALESCE(?, phone),
-           city = COALESCE(?, city),
-           address = COALESCE(?, address),
-           state = COALESCE(?, state),
-           pincode = COALESCE(?, pincode),
-           status = COALESCE(?, status)
-         WHERE id = ?`,
-        [
-          name ? name.trim() : null,
-          email ? email.trim().toLowerCase() : null,
-          mobile || phone ? (mobile || phone).trim() : null,
-          city || null,
-          address || null,
-          state || null,
-          pincode || null,
-          status ? status.toUpperCase() : null,
-          user.id,
-        ]
-      );
+    await query(
+      `UPDATE users SET 
+         name = COALESCE(?, name),
+         email = COALESCE(?, email),
+         phone = COALESCE(?, phone),
+         role = COALESCE(?, role),
+         status = COALESCE(?, status),
+         wallet_balance = COALESCE(?, wallet_balance),
+         city = COALESCE(?, city),
+         address = COALESCE(?, address),
+         company_name = COALESCE(?, company_name)
+       WHERE id = ?`,
+      [
+        name ? name.trim() : null,
+        email ? email.trim().toLowerCase() : null,
+        phone ? phone.trim() : null,
+        role ? role.toUpperCase() : null,
+        status ? status.toUpperCase() : null,
+        walletBalance !== undefined ? parseFloat(walletBalance) : null,
+        city || null,
+        address || null,
+        companyName || null,
+        prev.id,
+      ]
+    );
 
-      if (vehicleNumber) {
-        const [vRows] = await connection.execute("SELECT id FROM vehicles WHERE user_id = ? LIMIT 1", [user.id]);
-        if (vRows.length > 0) {
-          await connection.execute(
-            `UPDATE vehicles SET 
-               registration_number = COALESCE(?, registration_number),
-               brand = COALESCE(?, brand),
-               model = COALESCE(?, model),
-               battery_capacity = COALESCE(?, battery_capacity),
-               connector_type = COALESCE(?, connector_type)
-             WHERE id = ?`,
-            [
-              vehicleNumber ? vehicleNumber.trim().toUpperCase() : null,
-              brand || null,
-              model || null,
-              batteryCapacity ? parseFloat(batteryCapacity) : null,
-              preferredConnector || null,
-              vRows[0].id,
-            ]
-          );
-        } else {
-          const [vMax] = await connection.execute("SELECT COALESCE(MAX(id), 0) as maxId FROM vehicles");
-          const nextVId = (vMax[0]?.maxId || 0) + 1;
-          const vehicle_id = `VEH${String(nextVId).padStart(6, "0")}`;
-          await connection.execute(
-            `INSERT INTO vehicles (vehicle_id, user_id, registration_number, vehicle_type, brand, model, battery_capacity, connector_type)
-             VALUES (?, ?, ?, 'Electric 4W', ?, ?, ?, ?)`,
-            [vehicle_id, user.id, vehicleNumber.trim().toUpperCase(), brand || "Tata Motors", model || "Nexon EV", parseFloat(batteryCapacity) || 40.5, preferredConnector || "CCS2"]
-          );
-        }
-      }
-
-      // Record Audit Log
-      await connection.execute(
-        `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_value, new_value)
-         VALUES (?, 'UPDATE_CUSTOMER', 'CUSTOMER', ?, ?, ?)`,
-        [
-          req.user?.id || 1,
-          user.user_id || String(user.id),
-          JSON.stringify({ status: user.status, name: user.name }),
-          JSON.stringify({ status, name }),
-        ]
-      );
+    await recordAuditLog(query, {
+      userId: req.user?.id,
+      userRole: req.user?.role || "ADMIN",
+      action: "UPDATE_USER",
+      entityType: "USER",
+      entityId: prev.id,
+      oldValue: { name: prev.name, email: prev.email, role: prev.role, status: prev.status },
+      newValue: { name, email, role, status },
     });
 
-    res.json({ success: true, message: "Customer updated successfully in MySQL." });
+    res.json({ success: true, message: "User updated successfully." });
   } catch (error) {
-    console.error("updateCustomer error:", error);
     res.status(500).json({ success: false, message: "Error updating customer", error: error.message });
   }
 };
 
-/**
- * DELETE /api/admin/customers/:id (Admin DELETE / DEACTIVATE Customer)
- */
 export const deleteCustomer = async (req, res) => {
   try {
     const { id } = req.params;
     const isNum = /^\d+$/.test(id);
-    const existing = await query(
-      "SELECT * FROM users WHERE (id = ? OR user_id = ?) AND role IN ('USER', 'CUSTOMER')",
-      [isNum ? parseInt(id, 10) : 0, id]
-    );
-    if (!existing || existing.length === 0) {
-      return res.status(404).json({ success: false, message: "Customer not found." });
+    const existingUsers = await query("SELECT id, user_id, email, name FROM users WHERE id = ? OR user_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (existingUsers.length === 0) {
+      return res.status(404).json({ success: false, message: "User not found." });
     }
-    const user = existing[0];
+    const target = existingUsers[0];
 
-    // Soft delete / deactivation preferred to protect history
-    await query("UPDATE users SET status = 'INACTIVE' WHERE id = ?", [user.id]);
+    await query("DELETE FROM users WHERE id = ?", [target.id]);
 
-    await query(
-      `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, new_value)
-       VALUES (?, 'DELETE_CUSTOMER', 'CUSTOMER', ?, 'Customer account marked INACTIVE')`,
-      [req.user?.id || 1, user.user_id || String(user.id)]
-    );
+    await recordAuditLog(query, {
+      userId: req.user?.id,
+      userRole: req.user?.role || "ADMIN",
+      action: "DELETE_USER",
+      entityType: "USER",
+      entityId: target.id,
+      oldValue: target,
+    });
 
-    res.json({ success: true, message: "Customer account deactivated successfully." });
+    res.json({ success: true, message: `User ${target.user_id} deleted successfully.` });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error deleting customer", error: error.message });
   }
 };
 
+export const updateUserRole = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body;
+    if (!role) return res.status(400).json({ success: false, message: "Role is required." });
+
+    const isNum = /^\d+$/.test(id);
+    await query("UPDATE users SET role = ? WHERE id = ? OR user_id = ?", [role.toUpperCase(), isNum ? parseInt(id, 10) : 0, id]);
+
+    await recordAuditLog(query, {
+      userId: req.user?.id,
+      userRole: req.user?.role || "ADMIN",
+      action: "UPDATE_USER_ROLE",
+      entityType: "USER",
+      entityId: id,
+      newValue: { role: role.toUpperCase() },
+    });
+
+    res.json({ success: true, message: `User role updated to ${role}.` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error updating user role", error: error.message });
+  }
+};
+
 /**
- * 3. STATION OWNER MANAGEMENT (FULL CRUD)
- * GET /api/admin/station-owners & GET /api/admin/owners
+ * 3. OWNER VERIFICATION & MANAGEMENT (A. Owner and Station Verification Center)
  */
 export const getAllOwners = async (req, res) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
     const { search, status } = req.query;
-    let sql = `
-      SELECT u.id, u.user_id, u.name, u.company_name, u.email, u.phone, u.role, u.status, u.city, u.address, u.created_at,
-             COALESCE((SELECT COUNT(*) FROM stations s WHERE s.owner_id = u.id), 0) as station_count,
-             COALESCE((SELECT COUNT(*) FROM chargers c JOIN stations s ON c.station_id = s.id WHERE s.owner_id = u.id), 0) as charger_count,
-             COALESCE((SELECT SUM(p.amount) FROM payments p JOIN bookings b ON (p.booking_id = b.id OR p.booking_id = b.booking_id) JOIN stations s ON b.station_id = s.id WHERE s.owner_id = u.id AND p.payment_status = 'SUCCESS'), 0) as total_revenue
-      FROM users u
-      WHERE u.role IN ('STATION_OWNER', 'OWNER')
-    `;
+
+    let whereSql = "WHERE u.role IN ('STATION_OWNER', 'OWNER')";
     const params = [];
 
     if (status && status !== "ALL") {
-      sql += ` AND u.status = ?`;
-      params.push(status.toUpperCase());
+      const s = status.toUpperCase();
+      if (s === "PENDING") {
+        whereSql += " AND (u.status = 'PENDING' OR so.verification_status = 'PENDING')";
+      } else if (s === "VERIFIED" || s === "APPROVED" || s === "ACTIVE") {
+        whereSql += " AND (u.status = 'ACTIVE' OR so.verification_status = 'VERIFIED')";
+      } else if (s === "SUSPENDED") {
+        whereSql += " AND (u.status = 'SUSPENDED' OR so.verification_status = 'SUSPENDED')";
+      } else if (s === "REJECTED") {
+        whereSql += " AND (u.status = 'INACTIVE' OR so.verification_status = 'REJECTED')";
+      }
     }
 
     if (search && search.trim()) {
       const q = `%${search.trim().toLowerCase()}%`;
-      sql += ` AND (LOWER(u.user_id) LIKE ? OR LOWER(u.name) LIKE ? OR LOWER(u.company_name) LIKE ? OR LOWER(u.email) LIKE ? OR LOWER(u.phone) LIKE ?)`;
+      whereSql += ` AND (LOWER(u.user_id) LIKE ? OR LOWER(u.name) LIKE ? OR LOWER(u.company_name) LIKE ? OR LOWER(u.email) LIKE ? OR LOWER(u.phone) LIKE ?)`;
       params.push(q, q, q, q, q);
     }
 
-    sql += ` ORDER BY u.id DESC`;
-    const owners = await query(sql, params);
+    const [countRow] = await query(
+      `SELECT COUNT(*) as total 
+       FROM users u 
+       LEFT JOIN station_owners so ON u.id = so.user_id 
+       ${whereSql}`,
+      params
+    );
+    const total = countRow?.total || 0;
+
+    const owners = await query(
+      `SELECT u.id, u.user_id, u.name, u.company_name, u.email, u.phone, u.role, u.status, u.city, u.address, u.created_at,
+              so.verification_status, so.rejection_reason, so.suspension_reason, so.reviewed_at,
+              admin_user.name as reviewed_by_name,
+              COALESCE((SELECT COUNT(*) FROM stations s WHERE s.owner_id = u.id), 0) as station_count,
+              COALESCE((SELECT COUNT(*) FROM chargers c JOIN stations s ON c.station_id = s.id WHERE s.owner_id = u.id), 0) as charger_count,
+              COALESCE((SELECT SUM(p.amount) FROM payments p JOIN bookings b ON (p.booking_id = b.id OR p.booking_id = b.booking_id) JOIN stations s ON b.station_id = s.id WHERE s.owner_id = u.id AND p.payment_status = 'SUCCESS'), 0) as total_revenue
+       FROM users u
+       LEFT JOIN station_owners so ON u.id = so.user_id
+       LEFT JOIN users admin_user ON so.reviewed_by = admin_user.id
+       ${whereSql}
+       ORDER BY u.id DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
 
     const formatted = owners.map((o) => {
       const canonicalId = o.user_id || `OWN${String(o.id).padStart(6, "0")}`;
+      let verificationStatus = o.verification_status;
+      if (!verificationStatus) {
+        verificationStatus = o.status === "ACTIVE" ? "VERIFIED" : o.status === "SUSPENDED" ? "SUSPENDED" : o.status === "PENDING" ? "PENDING" : "REJECTED";
+      }
+
       return {
         id: o.id,
         counterId: canonicalId,
@@ -612,12 +527,17 @@ export const getAllOwners = async (req, res) => {
         name: o.name,
         companyName: o.company_name || o.name,
         company_name: o.company_name || o.name,
+        businessName: o.company_name || o.name,
         email: o.email,
         phone: o.phone || "—",
-        mobile: o.phone || "—",
         role: o.role,
         status: o.status || "ACTIVE",
-        owner_status: o.status || "ACTIVE",
+        owner_status: verificationStatus,
+        verificationStatus,
+        rejectionReason: o.rejection_reason,
+        suspensionReason: o.suspension_reason,
+        reviewedAt: o.reviewed_at,
+        reviewedByName: o.reviewed_by_name,
         city: o.city || "Chennai",
         address: o.address || "—",
         stationCount: parseInt(o.station_count, 10) || 0,
@@ -627,7 +547,15 @@ export const getAllOwners = async (req, res) => {
       };
     });
 
-    res.json({ success: true, count: formatted.length, data: formatted, owners: formatted });
+    res.json({
+      success: true,
+      count: formatted.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      data: formatted,
+      owners: formatted,
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error fetching owners", error: error.message });
   }
@@ -636,18 +564,23 @@ export const getAllOwners = async (req, res) => {
 export const getPendingOwners = async (req, res) => {
   try {
     const owners = await query(
-      `SELECT id, user_id, name, company_name, email, phone, role, status, created_at 
-       FROM users 
-       WHERE role IN ('STATION_OWNER', 'OWNER') AND status = 'PENDING' 
-       ORDER BY id DESC`
+      `SELECT u.id, u.user_id, u.name, u.company_name, u.email, u.phone, u.role, u.status, u.city, u.address, u.created_at,
+              so.verification_status 
+       FROM users u 
+       LEFT JOIN station_owners so ON u.id = so.user_id
+       WHERE u.role IN ('STATION_OWNER', 'OWNER') AND (u.status = 'PENDING' OR so.verification_status = 'PENDING')
+       ORDER BY u.id DESC`
     );
+
     const formatted = owners.map((o) => ({
       ...o,
       counter_id: o.user_id || `OWN${String(o.id).padStart(6, "0")}`,
       counterId: o.user_id || `OWN${String(o.id).padStart(6, "0")}`,
       businessName: o.company_name || o.name,
-      owner_status: o.status,
+      owner_status: "PENDING",
+      verificationStatus: "PENDING",
     }));
+
     res.json({ success: true, count: formatted.length, data: formatted });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error fetching pending owners", error: error.message });
@@ -658,8 +591,37 @@ export const approveOwner = async (req, res) => {
   try {
     const { id } = req.params;
     const isNum = /^\d+$/.test(id);
-    await query("UPDATE users SET status = 'ACTIVE' WHERE id = ? OR user_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
-    res.json({ success: true, message: "Station Owner approved successfully." });
+    const adminId = req.user?.id || 1;
+
+    const owners = await query("SELECT id, user_id, name, email FROM users WHERE id = ? OR user_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (owners.length === 0) return res.status(404).json({ success: false, message: "Owner not found." });
+    const owner = owners[0];
+
+    await query("UPDATE users SET status = 'ACTIVE' WHERE id = ?", [owner.id]);
+
+    const existingProfile = await query("SELECT id FROM station_owners WHERE user_id = ?", [owner.id]);
+    if (existingProfile.length > 0) {
+      await query(
+        "UPDATE station_owners SET verification_status = 'VERIFIED', reviewed_by = ?, reviewed_at = NOW(), rejection_reason = NULL, suspension_reason = NULL WHERE user_id = ?",
+        [adminId, owner.id]
+      );
+    } else {
+      await query(
+        "INSERT INTO station_owners (user_id, owner_code, verification_status, reviewed_by, reviewed_at) VALUES (?, ?, 'VERIFIED', ?, NOW())",
+        [owner.id, owner.user_id, adminId]
+      );
+    }
+
+    await recordAuditLog(query, {
+      userId: adminId,
+      userRole: req.user?.role || "ADMIN",
+      action: "APPROVE_OWNER",
+      entityType: "OWNER",
+      entityId: owner.id,
+      newValue: { status: "ACTIVE", verification_status: "VERIFIED" },
+    });
+
+    res.json({ success: true, message: `Station Owner ${owner.name} approved successfully.` });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error approving owner", error: error.message });
   }
@@ -668,11 +630,105 @@ export const approveOwner = async (req, res) => {
 export const rejectOwner = async (req, res) => {
   try {
     const { id } = req.params;
+    const { reason = "Credentials could not be verified" } = req.body;
     const isNum = /^\d+$/.test(id);
-    await query("UPDATE users SET status = 'INACTIVE' WHERE id = ? OR user_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
-    res.json({ success: true, message: "Station Owner registration rejected." });
+    const adminId = req.user?.id || 1;
+
+    const owners = await query("SELECT id, user_id, name FROM users WHERE id = ? OR user_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (owners.length === 0) return res.status(404).json({ success: false, message: "Owner not found." });
+    const owner = owners[0];
+
+    await query("UPDATE users SET status = 'INACTIVE' WHERE id = ?", [owner.id]);
+
+    const existingProfile = await query("SELECT id FROM station_owners WHERE user_id = ?", [owner.id]);
+    if (existingProfile.length > 0) {
+      await query(
+        "UPDATE station_owners SET verification_status = 'REJECTED', rejection_reason = ?, reviewed_by = ?, reviewed_at = NOW() WHERE user_id = ?",
+        [reason, adminId, owner.id]
+      );
+    } else {
+      await query(
+        "INSERT INTO station_owners (user_id, owner_code, verification_status, rejection_reason, reviewed_by, reviewed_at) VALUES (?, ?, 'REJECTED', ?, ?, NOW())",
+        [owner.id, owner.user_id, reason, adminId]
+      );
+    }
+
+    await recordAuditLog(query, {
+      userId: adminId,
+      userRole: req.user?.role || "ADMIN",
+      action: "REJECT_OWNER",
+      entityType: "OWNER",
+      entityId: owner.id,
+      newValue: { status: "INACTIVE", verification_status: "REJECTED", reason },
+    });
+
+    res.json({ success: true, message: `Station Owner registration rejected.` });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error rejecting owner", error: error.message });
+  }
+};
+
+export const suspendOwner = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason = "Administrative suspension for compliance check" } = req.body;
+    const isNum = /^\d+$/.test(id);
+    const adminId = req.user?.id || 1;
+
+    const owners = await query("SELECT id, user_id, name FROM users WHERE id = ? OR user_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (owners.length === 0) return res.status(404).json({ success: false, message: "Owner not found." });
+    const owner = owners[0];
+
+    await query("UPDATE users SET status = 'SUSPENDED' WHERE id = ?", [owner.id]);
+
+    await query(
+      "UPDATE station_owners SET verification_status = 'SUSPENDED', suspension_reason = ?, reviewed_by = ?, reviewed_at = NOW() WHERE user_id = ?",
+      [reason, adminId, owner.id]
+    );
+
+    await recordAuditLog(query, {
+      userId: adminId,
+      userRole: req.user?.role || "ADMIN",
+      action: "SUSPEND_OWNER",
+      entityType: "OWNER",
+      entityId: owner.id,
+      newValue: { status: "SUSPENDED", verification_status: "SUSPENDED", reason },
+    });
+
+    res.json({ success: true, message: `Station Owner ${owner.name} suspended.` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error suspending owner", error: error.message });
+  }
+};
+
+export const reactivateOwner = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const isNum = /^\d+$/.test(id);
+    const adminId = req.user?.id || 1;
+
+    const owners = await query("SELECT id, user_id, name FROM users WHERE id = ? OR user_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (owners.length === 0) return res.status(404).json({ success: false, message: "Owner not found." });
+    const owner = owners[0];
+
+    await query("UPDATE users SET status = 'ACTIVE' WHERE id = ?", [owner.id]);
+    await query(
+      "UPDATE station_owners SET verification_status = 'VERIFIED', suspension_reason = NULL, reviewed_by = ?, reviewed_at = NOW() WHERE user_id = ?",
+      [adminId, owner.id]
+    );
+
+    await recordAuditLog(query, {
+      userId: adminId,
+      userRole: req.user?.role || "ADMIN",
+      action: "REACTIVATE_OWNER",
+      entityType: "OWNER",
+      entityId: owner.id,
+      newValue: { status: "ACTIVE", verification_status: "VERIFIED" },
+    });
+
+    res.json({ success: true, message: `Station Owner ${owner.name} reactivated successfully.` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error reactivating owner", error: error.message });
   }
 };
 
@@ -688,15 +744,28 @@ export const createOwner = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    const [maxRow] = await query("SELECT COALESCE(MAX(id), 0) as maxId FROM users");
-    const nextId = (maxRow?.maxId || 0) + 1;
-    const user_id = `OWN${String(nextId).padStart(6, "0")}`;
+    const user_id = await getNextSequenceId("OWN", "users");
 
     const insertRes = await query(
       `INSERT INTO users (user_id, name, email, password_hash, phone, role, status, company_name, city, address)
        VALUES (?, ?, ?, ?, ?, 'STATION_OWNER', ?, ?, ?, ?)`,
       [user_id, name.trim(), cleanEmail, hashedPassword, (phone || mobile || "").trim(), status, companyName || businessName || name.trim(), city, address]
     );
+
+    await query(
+      `INSERT INTO station_owners (user_id, owner_code, business_name, business_email, business_phone, verification_status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [insertRes.insertId, user_id, companyName || businessName || name.trim(), cleanEmail, (phone || mobile || "").trim(), status === "ACTIVE" ? "VERIFIED" : "PENDING"]
+    );
+
+    await recordAuditLog(query, {
+      userId: req.user?.id,
+      userRole: req.user?.role || "ADMIN",
+      action: "CREATE_OWNER",
+      entityType: "OWNER",
+      entityId: insertRes.insertId,
+      newValue: { user_id, name: name.trim(), email: cleanEmail },
+    });
 
     res.status(201).json({
       success: true,
@@ -711,8 +780,12 @@ export const createOwner = async (req, res) => {
 export const updateOwner = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, email, phone, companyName, city, address, status } = req.body;
+    const { name, email, phone, companyName, city, address, status, verificationStatus } = req.body;
     const isNum = /^\d+$/.test(id);
+
+    const prevRows = await query("SELECT * FROM users WHERE (id = ? OR user_id = ?) AND role IN ('STATION_OWNER', 'OWNER')", [isNum ? parseInt(id, 10) : 0, id]);
+    if (prevRows.length === 0) return res.status(404).json({ success: false, message: "Owner not found." });
+    const prev = prevRows[0];
 
     await query(
       `UPDATE users SET 
@@ -723,7 +796,7 @@ export const updateOwner = async (req, res) => {
          city = COALESCE(?, city),
          address = COALESCE(?, address),
          status = COALESCE(?, status)
-       WHERE (id = ? OR user_id = ?) AND role IN ('STATION_OWNER', 'OWNER')`,
+       WHERE id = ?`,
       [
         name ? name.trim() : null,
         email ? email.trim().toLowerCase() : null,
@@ -732,10 +805,26 @@ export const updateOwner = async (req, res) => {
         city || null,
         address || null,
         status ? status.toUpperCase() : null,
-        isNum ? parseInt(id, 10) : 0,
-        id,
+        prev.id,
       ]
     );
+
+    if (verificationStatus) {
+      await query(
+        "UPDATE station_owners SET verification_status = ?, reviewed_by = ?, reviewed_at = NOW() WHERE user_id = ?",
+        [verificationStatus.toUpperCase(), req.user?.id || 1, prev.id]
+      );
+    }
+
+    await recordAuditLog(query, {
+      userId: req.user?.id,
+      userRole: req.user?.role || "ADMIN",
+      action: "UPDATE_OWNER",
+      entityType: "OWNER",
+      entityId: prev.id,
+      oldValue: prev,
+      newValue: { name, email, phone, companyName, status, verificationStatus },
+    });
 
     res.json({ success: true, message: "Station Owner updated successfully." });
   } catch (error) {
@@ -747,35 +836,36 @@ export const deleteOwner = async (req, res) => {
   try {
     const { id } = req.params;
     const isNum = /^\d+$/.test(id);
-    const [owner] = await query("SELECT id, user_id FROM users WHERE (id = ? OR user_id = ?) AND role IN ('STATION_OWNER', 'OWNER')", [isNum ? parseInt(id, 10) : 0, id]);
+    const [owner] = await query("SELECT id, user_id, name FROM users WHERE (id = ? OR user_id = ?) AND role IN ('STATION_OWNER', 'OWNER')", [isNum ? parseInt(id, 10) : 0, id]);
     if (!owner) return res.status(404).json({ success: false, message: "Owner not found." });
 
-    // Check associated stations
-    const stations = await query("SELECT id FROM stations WHERE owner_id = ?", [owner.id]);
-    if (stations.length > 0) {
-      // Soft deactivate instead of orphan deletion
-      await query("UPDATE users SET status = 'INACTIVE' WHERE id = ?", [owner.id]);
-      return res.json({ success: true, message: "Owner has associated stations. Account marked INACTIVE." });
-    }
+    await query("DELETE FROM users WHERE id = ?", [owner.id]);
 
-    await query("UPDATE users SET status = 'INACTIVE' WHERE id = ?", [owner.id]);
-    res.json({ success: true, message: "Owner deactivated successfully." });
+    await recordAuditLog(query, {
+      userId: req.user?.id,
+      userRole: req.user?.role || "ADMIN",
+      action: "DELETE_OWNER",
+      entityType: "OWNER",
+      entityId: owner.id,
+      oldValue: owner,
+    });
+
+    res.json({ success: true, message: `Station Owner ${owner.user_id} deleted successfully.` });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error deleting owner", error: error.message });
   }
 };
 
 /**
- * 4. TECHNICIAN MANAGEMENT (FULL CRUD)
- * GET /api/admin/technicians
+ * 4. TECHNICIANS MANAGEMENT (CRUD)
  */
 export const getAllTechnicians = async (req, res) => {
   try {
     const { search, status } = req.query;
     let sql = `
-      SELECT u.id, u.user_id, u.name, u.email, u.phone, u.role, u.status, u.city, u.created_at,
-             COALESCE((SELECT COUNT(*) FROM maintenance_tickets mt WHERE mt.technician_id = u.id AND mt.status NOT IN ('RESOLVED', 'CLOSED')), 0) as active_tasks,
-             (SELECT s.station_name FROM stations s LIMIT 1) as assigned_station
+      SELECT u.id, u.user_id, u.name, u.email, u.phone, u.role, u.status, u.city, u.address, u.created_at,
+             COALESCE((SELECT COUNT(*) FROM maintenance_tickets mt WHERE mt.technician_id = u.id AND mt.status IN ('OPEN', 'ASSIGNED', 'IN_PROGRESS')), 0) as active_tickets,
+             COALESCE((SELECT COUNT(*) FROM maintenance_tickets mt WHERE mt.technician_id = u.id AND mt.status IN ('RESOLVED', 'CLOSED')), 0) as resolved_tickets
       FROM users u
       WHERE u.role IN ('TECHNICIAN', 'TECH')
     `;
@@ -792,31 +882,26 @@ export const getAllTechnicians = async (req, res) => {
       params.push(q, q, q, q);
     }
 
-    sql += ` ORDER BY u.id ASC`;
-    const rows = await query(sql, params);
+    sql += ` ORDER BY u.id DESC`;
+    const techs = await query(sql, params);
 
-    const formatted = rows.map((t, idx) => {
-      const canonicalId = t.user_id || `TECH${String(t.id).padStart(4, "0")}`;
-      return {
-        id: t.id,
-        counterId: canonicalId,
-        technicianId: canonicalId,
-        name: t.name,
-        email: t.email,
-        phone: t.phone || "+91 98401 23456",
-        specialization: idx % 2 === 0 ? "DC Ultra-Fast & High Voltage Charger Diagnostics" : "Liquid Cooled Cable Systems & Inverters",
-        experienceYears: 4 + (idx % 4),
-        certification: idx % 2 === 0 ? "Level 3 Master EVSE High Voltage Specialist & Siemens Certified" : "ABB Certified EV Infrastructure Specialist",
-        assignedStation: t.assigned_station || "EV Power Hub Chennai Central",
-        assignedStationId: 1,
-        status: t.status || "ACTIVE",
-        isOnline: t.status === "ACTIVE",
-        activeTasks: parseInt(t.active_tasks, 10) || 0,
-        createdAt: t.created_at,
-      };
-    });
+    const formatted = techs.map((t) => ({
+      id: t.id,
+      counterId: t.user_id || `TECH${String(t.id).padStart(4, "0")}`,
+      technicianId: t.user_id || `TECH${String(t.id).padStart(4, "0")}`,
+      name: t.name,
+      email: t.email,
+      phone: t.phone || "—",
+      role: t.role,
+      status: t.status || "ACTIVE",
+      city: t.city || "Chennai",
+      address: t.address || "—",
+      activeTickets: parseInt(t.active_tickets, 10) || 0,
+      resolvedTickets: parseInt(t.resolved_tickets, 10) || 0,
+      createdAt: t.created_at,
+    }));
 
-    res.json({ success: true, count: formatted.length, data: formatted, technicians: formatted });
+    res.json({ success: true, count: formatted.length, data: formatted });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error fetching technicians", error: error.message });
   }
@@ -824,7 +909,7 @@ export const getAllTechnicians = async (req, res) => {
 
 export const createTechnician = async (req, res) => {
   try {
-    const { name, email, phone, password = "password123", specialization, certification, assignedStationId, status = "ACTIVE" } = req.body;
+    const { name, email, phone, password = "password123", city = "Chennai", address = "", status = "ACTIVE" } = req.body;
     if (!name || !email) return res.status(400).json({ success: false, message: "Name and Email are required." });
 
     const cleanEmail = email.trim().toLowerCase();
@@ -833,21 +918,27 @@ export const createTechnician = async (req, res) => {
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
+    const user_id = await getNextSequenceId("TECH", "users");
 
-    const [maxRow] = await query("SELECT COALESCE(MAX(id), 0) as maxId FROM users");
-    const nextId = (maxRow?.maxId || 0) + 1;
-    const user_id = `TECH${String(nextId).padStart(4, "0")}`;
-
-    const result = await query(
-      `INSERT INTO users (user_id, name, email, password_hash, phone, role, status)
-       VALUES (?, ?, ?, ?, ?, 'TECHNICIAN', ?)`,
-      [user_id, name.trim(), cleanEmail, hashedPassword, phone ? phone.trim() : null, status]
+    const insertRes = await query(
+      `INSERT INTO users (user_id, name, email, password_hash, phone, role, status, city, address)
+       VALUES (?, ?, ?, ?, ?, 'TECHNICIAN', ?, ?, ?)`,
+      [user_id, name.trim(), cleanEmail, hashedPassword, (phone || "").trim(), status, city, address]
     );
+
+    await recordAuditLog(query, {
+      userId: req.user?.id,
+      userRole: req.user?.role || "ADMIN",
+      action: "CREATE_TECHNICIAN",
+      entityType: "TECHNICIAN",
+      entityId: insertRes.insertId,
+      newValue: { user_id, name: name.trim(), email: cleanEmail },
+    });
 
     res.status(201).json({
       success: true,
       message: `Technician ${user_id} created successfully!`,
-      data: { id: result.insertId, user_id, counterId: user_id, name: name.trim(), email: cleanEmail },
+      data: { id: insertRes.insertId, user_id, counterId: user_id, name: name.trim(), email: cleanEmail },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error creating technician", error: error.message });
@@ -857,7 +948,7 @@ export const createTechnician = async (req, res) => {
 export const updateTechnician = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, email, phone, status, specialization, certification } = req.body;
+    const { name, email, phone, city, address, status } = req.body;
     const isNum = /^\d+$/.test(id);
 
     await query(
@@ -865,12 +956,16 @@ export const updateTechnician = async (req, res) => {
          name = COALESCE(?, name),
          email = COALESCE(?, email),
          phone = COALESCE(?, phone),
+         city = COALESCE(?, city),
+         address = COALESCE(?, address),
          status = COALESCE(?, status)
        WHERE (id = ? OR user_id = ?) AND role IN ('TECHNICIAN', 'TECH')`,
       [
         name ? name.trim() : null,
         email ? email.trim().toLowerCase() : null,
         phone ? phone.trim() : null,
+        city || null,
+        address || null,
         status ? status.toUpperCase() : null,
         isNum ? parseInt(id, 10) : 0,
         id,
@@ -887,150 +982,362 @@ export const deleteTechnician = async (req, res) => {
   try {
     const { id } = req.params;
     const isNum = /^\d+$/.test(id);
-    await query("UPDATE users SET status = 'INACTIVE' WHERE (id = ? OR user_id = ?) AND role IN ('TECHNICIAN', 'TECH')", [
-      isNum ? parseInt(id, 10) : 0,
-      id,
-    ]);
-    res.json({ success: true, message: "Technician deactivated successfully." });
+    await query("DELETE FROM users WHERE (id = ? OR user_id = ?) AND role IN ('TECHNICIAN', 'TECH')", [isNum ? parseInt(id, 10) : 0, id]);
+    res.json({ success: true, message: "Technician deleted successfully." });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error deleting technician", error: error.message });
   }
 };
 
 /**
- * 5. STATION MANAGEMENT (FULL CRUD)
- * GET /api/admin/stations
+ * 5. STATIONS APPROVAL & MANAGEMENT (A. Owner and Station Verification Center)
  */
 export const getStationsAdmin = async (req, res) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
+    const { search, status, approvalStatus, city, ownerId } = req.query;
+
+    let whereSql = "WHERE 1=1";
+    const params = [];
+
+    if (approvalStatus && approvalStatus !== "ALL") {
+      whereSql += " AND s.approval_status = ?";
+      params.push(approvalStatus.toUpperCase());
+    } else if (status && status !== "ALL") {
+      whereSql += " AND s.approval_status = ?";
+      params.push(status.toUpperCase());
+    }
+
+    if (city && city !== "ALL") {
+      whereSql += " AND LOWER(s.city) = ?";
+      params.push(city.toLowerCase());
+    }
+
+    if (ownerId) {
+      whereSql += " AND s.owner_id = ?";
+      params.push(parseInt(ownerId, 10) || 0);
+    }
+
+    if (search && search.trim()) {
+      const q = `%${search.trim().toLowerCase()}%`;
+      whereSql += " AND (LOWER(s.station_name) LIKE ? OR LOWER(s.station_id) LIKE ? OR LOWER(s.city) LIKE ? OR LOWER(u.name) LIKE ? OR LOWER(u.company_name) LIKE ?)";
+      params.push(q, q, q, q, q);
+    }
+
+    const [countRow] = await query(`SELECT COUNT(*) as total FROM stations s LEFT JOIN users u ON s.owner_id = u.id ${whereSql}`, params);
+    const total = countRow?.total || 0;
+
     const stations = await query(
-      `SELECT s.*, u.name as owner_name, u.email as owner_email, u.user_id as owner_code,
+      `SELECT s.*, u.name as owner_name, u.email as owner_email, u.phone as owner_phone, u.company_name as owner_company,
+              admin_user.name as reviewed_by_name,
               COALESCE((SELECT COUNT(*) FROM chargers c WHERE c.station_id = s.id), 0) as charger_count,
               COALESCE((SELECT COUNT(*) FROM chargers c WHERE c.station_id = s.id AND c.status = 'AVAILABLE'), 0) as available_chargers,
-              COALESCE((SELECT COUNT(*) FROM chargers c WHERE c.station_id = s.id AND c.status IN ('CHARGING', 'OCCUPIED')), 0) as charging_now,
-              COALESCE((SELECT SUM(p.amount) FROM payments p JOIN bookings b ON (p.booking_id = b.id OR p.booking_id = b.booking_id) WHERE b.station_id = s.id AND p.payment_status = 'SUCCESS'), 0) as total_revenue
-       FROM stations s 
-       LEFT JOIN users u ON s.owner_id = u.id 
-       ORDER BY s.id ASC`
+              COALESCE((SELECT COUNT(*) FROM station_photos sp WHERE sp.station_id = s.id), 0) as photo_count
+       FROM stations s
+       LEFT JOIN users u ON s.owner_id = u.id
+       LEFT JOIN users admin_user ON s.reviewed_by = admin_user.id
+       ${whereSql}
+       ORDER BY s.id DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
     );
 
     const formatted = stations.map((s) => ({
       id: s.id,
-      stationId: s.station_id || `STA${String(s.id).padStart(6, "0")}`,
-      station_id: s.station_id || `STA${String(s.id).padStart(6, "0")}`,
+      stationId: s.station_id,
+      station_id: s.station_id,
       name: s.station_name,
+      stationName: s.station_name,
       station_name: s.station_name,
+      address: s.address,
+      city: s.city || "Chennai",
+      state: s.state || "Tamil Nadu",
+      latitude: parseFloat(s.latitude),
+      longitude: parseFloat(s.longitude),
+      maxPower: parseFloat(s.max_power) || 120.0,
+      totalSlots: parseInt(s.total_slots, 10) || parseInt(s.charger_count, 10) || 4,
+      availableSlots: parseInt(s.available_chargers, 10) || 0,
+      status: s.status || "ACTIVE",
+      approvalStatus: s.approval_status || "PENDING",
+      approval_status: s.approval_status || "PENDING",
+      approvalNotes: s.approval_notes,
+      reviewedAt: s.reviewed_at,
+      reviewedByName: s.reviewed_by_name,
       ownerId: s.owner_id,
-      ownerName: s.owner_name || "Platform Admin",
-      owner_name: s.owner_name || "Platform Admin",
+      ownerName: s.owner_name || "Independent Operator",
       ownerEmail: s.owner_email,
+      ownerCompany: s.owner_company || s.owner_name,
+      chargerCount: parseInt(s.charger_count, 10) || 0,
+      photoCount: parseInt(s.photo_count, 10) || 0,
+      image: s.image,
+      createdAt: s.created_at,
+    }));
+
+    res.json({
+      success: true,
+      count: formatted.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      data: formatted,
+      stations: formatted,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error fetching stations", error: error.message });
+  }
+};
+
+export const getPendingStations = async (req, res) => {
+  try {
+    const stations = await query(
+      `SELECT s.*, u.name as owner_name, u.email as owner_email, u.phone as owner_phone, u.company_name as owner_company,
+              COALESCE((SELECT COUNT(*) FROM chargers c WHERE c.station_id = s.id), 0) as charger_count,
+              COALESCE((SELECT COUNT(*) FROM station_photos sp WHERE sp.station_id = s.id), 0) as photo_count
+       FROM stations s
+       LEFT JOIN users u ON s.owner_id = u.id
+       WHERE s.approval_status = 'PENDING' OR s.status = 'PENDING'
+       ORDER BY s.id DESC`
+    );
+
+    const formatted = stations.map((s) => ({
+      id: s.id,
+      stationId: s.station_id,
+      station_id: s.station_id,
+      stationName: s.station_name,
       address: s.address,
       city: s.city,
-      state: s.state,
-      pincode: s.pincode,
-      latitude: parseFloat(s.latitude) || 13.0827,
-      longitude: parseFloat(s.longitude) || 80.2707,
-      openingTime: s.opening_time || "06:00 AM",
-      closingTime: s.closing_time || "11:00 PM",
-      contactNumber: s.contact_number,
-      totalSlots: parseInt(s.total_slots, 10) || 4,
-      availableSlots: parseInt(s.available_slots, 10) || 4,
-      maxPower: parseFloat(s.max_power) || 150.0,
-      chargerCount: parseInt(s.charger_count, 10) || 0,
-      availableChargers: parseInt(s.available_chargers, 10) || 0,
-      chargingNow: parseInt(s.charging_now, 10) || 0,
-      totalRevenue: parseFloat(s.total_revenue) || 0,
-      status: s.status || "ACTIVE",
-      approval_status: s.approval_status || "APPROVED",
-      approvalStatus: s.approval_status || "APPROVED",
+      maxPower: parseFloat(s.max_power) || 120,
+      totalSlots: s.total_slots || s.charger_count || 4,
+      status: s.status,
+      approval_status: "PENDING",
+      approvalStatus: "PENDING",
+      ownerName: s.owner_name,
+      ownerCompany: s.owner_company || s.owner_name,
+      ownerEmail: s.owner_email,
+      chargerCount: s.charger_count,
+      photoCount: s.photo_count,
       createdAt: s.created_at,
     }));
 
     res.json({ success: true, count: formatted.length, data: formatted });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error fetching admin stations", error: error.message });
+    res.status(500).json({ success: false, message: "Error fetching pending stations", error: error.message });
+  }
+};
+
+export const getStationPhotosAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const isNum = /^\d+$/.test(id);
+    const stationRows = await query("SELECT id FROM stations WHERE id = ? OR station_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (stationRows.length === 0) return res.status(404).json({ success: false, message: "Station not found." });
+
+    const photos = await query("SELECT * FROM station_photos WHERE station_id = ? ORDER BY is_primary DESC, id ASC", [stationRows[0].id]);
+    res.json({ success: true, data: photos });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error fetching station photos", error: error.message });
+  }
+};
+
+export const approveStation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const isNum = /^\d+$/.test(id);
+    const adminId = req.user?.id || 1;
+
+    const stations = await query("SELECT id, station_id, station_name, owner_id FROM stations WHERE id = ? OR station_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (stations.length === 0) return res.status(404).json({ success: false, message: "Station not found." });
+    const station = stations[0];
+
+    await query(
+      "UPDATE stations SET approval_status = 'APPROVED', status = 'ACTIVE', reviewed_by = ?, reviewed_at = NOW(), approval_notes = NULL WHERE id = ?",
+      [adminId, station.id]
+    );
+
+    await recordAuditLog(query, {
+      userId: adminId,
+      userRole: req.user?.role || "ADMIN",
+      action: "APPROVE_STATION",
+      entityType: "STATION",
+      entityId: station.id,
+      newValue: { approval_status: "APPROVED", status: "ACTIVE" },
+    });
+
+    emitStationUpdated({ id: station.id, stationId: station.station_id, status: "ACTIVE", approvalStatus: "APPROVED" });
+
+    res.json({ success: true, message: `Station "${station.station_name}" approved and published to Live EV Map!` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error approving station", error: error.message });
+  }
+};
+
+export const rejectStation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason = "Station electrical or location verification rejected" } = req.body;
+    const isNum = /^\d+$/.test(id);
+    const adminId = req.user?.id || 1;
+
+    const stations = await query("SELECT id, station_id, station_name FROM stations WHERE id = ? OR station_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (stations.length === 0) return res.status(404).json({ success: false, message: "Station not found." });
+    const station = stations[0];
+
+    await query(
+      "UPDATE stations SET approval_status = 'REJECTED', status = 'INACTIVE', approval_notes = ?, reviewed_by = ?, reviewed_at = NOW() WHERE id = ?",
+      [reason, adminId, station.id]
+    );
+
+    await recordAuditLog(query, {
+      userId: adminId,
+      userRole: req.user?.role || "ADMIN",
+      action: "REJECT_STATION",
+      entityType: "STATION",
+      entityId: station.id,
+      newValue: { approval_status: "REJECTED", status: "INACTIVE", reason },
+    });
+
+    emitStationUpdated({ id: station.id, stationId: station.station_id, status: "INACTIVE", approvalStatus: "REJECTED" });
+
+    res.json({ success: true, message: `Station "${station.station_name}" rejected.` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error rejecting station", error: error.message });
+  }
+};
+
+export const suspendStation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason = "Suspended due to safety inspection or compliance notice" } = req.body;
+    const isNum = /^\d+$/.test(id);
+    const adminId = req.user?.id || 1;
+
+    const stations = await query("SELECT id, station_id, station_name FROM stations WHERE id = ? OR station_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (stations.length === 0) return res.status(404).json({ success: false, message: "Station not found." });
+    const station = stations[0];
+
+    await query(
+      "UPDATE stations SET approval_status = 'SUSPENDED', status = 'INACTIVE', approval_notes = ?, reviewed_by = ?, reviewed_at = NOW() WHERE id = ?",
+      [reason, adminId, station.id]
+    );
+
+    await recordAuditLog(query, {
+      userId: adminId,
+      userRole: req.user?.role || "ADMIN",
+      action: "SUSPEND_STATION",
+      entityType: "STATION",
+      entityId: station.id,
+      newValue: { approval_status: "SUSPENDED", status: "INACTIVE", reason },
+    });
+
+    emitStationUpdated({ id: station.id, stationId: station.station_id, status: "INACTIVE", approvalStatus: "SUSPENDED" });
+
+    res.json({ success: true, message: `Station "${station.station_name}" suspended from public view.` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error suspending station", error: error.message });
+  }
+};
+
+export const reactivateStation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const isNum = /^\d+$/.test(id);
+    const adminId = req.user?.id || 1;
+
+    const stations = await query("SELECT id, station_id, station_name FROM stations WHERE id = ? OR station_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (stations.length === 0) return res.status(404).json({ success: false, message: "Station not found." });
+    const station = stations[0];
+
+    await query(
+      "UPDATE stations SET approval_status = 'APPROVED', status = 'ACTIVE', approval_notes = NULL, reviewed_by = ?, reviewed_at = NOW() WHERE id = ?",
+      [adminId, station.id]
+    );
+
+    await recordAuditLog(query, {
+      userId: adminId,
+      userRole: req.user?.role || "ADMIN",
+      action: "REACTIVATE_STATION",
+      entityType: "STATION",
+      entityId: station.id,
+      newValue: { approval_status: "APPROVED", status: "ACTIVE" },
+    });
+
+    emitStationUpdated({ id: station.id, stationId: station.station_id, status: "ACTIVE", approvalStatus: "APPROVED" });
+
+    res.json({ success: true, message: `Station "${station.station_name}" reactivated and published.` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error reactivating station", error: error.message });
   }
 };
 
 export const createStationAdmin = async (req, res) => {
   try {
-    const {
-      stationName,
-      name,
-      ownerId,
-      address,
-      city = "Chennai",
-      state = "Tamil Nadu",
-      pincode = "600001",
-      latitude = 13.0827,
-      longitude = 80.2707,
-      openingTime = "06:00 AM",
-      closingTime = "11:00 PM",
-      contactNumber = "+91 98765 43210",
-      totalSlots = 4,
-      maxPower = 150.0,
-      pricing = 18.0,
-      status = "ACTIVE",
-    } = req.body;
+    const { ownerId, stationName, address, city = "Chennai", state = "Tamil Nadu", pincode = "600001", latitude = 13.0827, longitude = 80.2707, totalSlots = 4, maxPower = 120.0, openingTime = "06:00 AM", closingTime = "11:00 PM", contactNumber = "9876543210", amenities = "WiFi, Restroom", image, status = "ACTIVE", approvalStatus = "APPROVED" } = req.body;
 
-    const sName = stationName || name;
-    if (!sName) return res.status(400).json({ success: false, message: "Station name is required." });
-
-    // Determine owner numeric ID
-    let targetOwnerId = parseInt(ownerId, 10);
-    if (isNaN(targetOwnerId) || targetOwnerId <= 0) {
-      const [firstOwner] = await query("SELECT id FROM users WHERE role IN ('STATION_OWNER', 'OWNER') LIMIT 1");
-      targetOwnerId = firstOwner?.id || req.user?.id || 1;
+    if (!stationName || !address) {
+      return res.status(400).json({ success: false, message: "Station name and address are required." });
     }
 
-    const [maxRow] = await query("SELECT COALESCE(MAX(id), 0) as maxId FROM stations");
-    const nextId = (maxRow?.maxId || 0) + 1;
-    const station_id = `STA${String(nextId).padStart(6, "0")}`;
+    let resolvedOwnerId = parseInt(ownerId, 10);
+    if (!resolvedOwnerId) {
+      const defaultOwner = await query("SELECT id FROM users WHERE role IN ('STATION_OWNER', 'OWNER') LIMIT 1");
+      resolvedOwnerId = defaultOwner[0]?.id || 1;
+    }
 
-    let insertedStationId = null;
-    await transaction(async (connection) => {
-      const [stResult] = await connection.execute(
-        `INSERT INTO stations (station_id, owner_id, station_name, address, city, state, pincode, latitude, longitude, opening_time, closing_time, contact_number, total_slots, available_slots, max_power, status, approval_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'APPROVED')`,
-        [station_id, targetOwnerId, sName, address || "Station Address", city, state, pincode, parseFloat(latitude) || 13.0827, parseFloat(longitude) || 80.2707, openingTime, closingTime, contactNumber, parseInt(totalSlots, 10) || 4, parseInt(totalSlots, 10) || 4, parseFloat(maxPower) || 150.0, status]
+    const station_id = await getNextSequenceId("STA", "stations");
+
+    const insertRes = await query(
+      `INSERT INTO stations (station_id, owner_id, station_name, address, city, state, pincode, latitude, longitude, total_slots, available_slots, max_power, opening_time, closing_time, contact_number, amenities, image, status, approval_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [station_id, resolvedOwnerId, stationName.trim(), address.trim(), city, state, pincode, parseFloat(latitude), parseFloat(longitude), parseInt(totalSlots, 10) || 4, parseInt(totalSlots, 10) || 4, parseFloat(maxPower) || 120.0, openingTime, closingTime, contactNumber, amenities, image || null, status, approvalStatus]
+    );
+
+    const stId = insertRes.insertId;
+
+    // Create initial chargers for slots
+    const slotsCount = parseInt(totalSlots, 10) || 4;
+    for (let i = 1; i <= slotsCount; i++) {
+      const chgCode = `${station_id}-CHG${String(i).padStart(2, "0")}`;
+      const chgType = i % 2 === 0 ? "DC_FAST" : "CCS2";
+      const pwr = chgType === "DC_FAST" ? 60.0 : 50.0;
+
+      const chgRes = await query(
+        `INSERT INTO chargers (charger_id, station_id, charger_name, charger_type, power_kw, status, connector_count, last_heartbeat)
+         VALUES (?, ?, ?, ?, ?, 'AVAILABLE', 1, NOW())`,
+        [chgCode, stId, `Bay ${i} (${chgType})`, chgType, pwr]
       );
-      insertedStationId = stResult.insertId;
 
-      // Add default tariff
-      const tariff_id = `TAR${String(insertedStationId).padStart(6, "0")}`;
-      await connection.execute(
-        `INSERT INTO tariffs (tariff_id, station_id, base_rate_per_kwh, peak_rate_per_kwh, off_peak_rate_per_kwh, connection_fee, idle_fee_per_minute, status)
-         VALUES (?, ?, ?, ?, ?, 15.00, 2.00, 'ACTIVE')`,
-        [tariff_id, insertedStationId, parseFloat(pricing) || 18.0, (parseFloat(pricing) || 18.0) * 1.25, (parseFloat(pricing) || 18.0) * 0.8]
+      await query(
+        `INSERT INTO charger_connectors (connector_id, charger_id, connector_type, power_kw, status)
+         VALUES (?, ?, ?, ?, 'AVAILABLE')`,
+        [`${chgCode}-CON01`, chgRes.insertId, chgType, pwr]
       );
+    }
 
-      // Create initial chargers
-      const count = Math.min(6, parseInt(totalSlots, 10) || 4);
-      for (let i = 1; i <= count; i++) {
-        const charger_id = `CHG${String(insertedStationId).padStart(3, "0")}${String(i).padStart(3, "0")}`;
-        const [chgRes] = await connection.execute(
-          `INSERT INTO chargers (charger_id, station_id, charger_name, charger_type, power_kw, status, connector_count)
-           VALUES (?, ?, ?, 'DC_FAST', 60.00, 'AVAILABLE', 1)`,
-          [charger_id, insertedStationId, `Bay 0${i} (CCS2 60kW)`]
-        );
-        const connector_id = `CON${String(chgRes.insertId).padStart(6, "0")}`;
-        await connection.execute(
-          `INSERT INTO charger_connectors (connector_id, charger_id, connector_type, power_kw, status)
-           VALUES (?, ?, 'CCS2', 60.00, 'AVAILABLE')`,
-          [connector_id, chgRes.insertId]
-        );
-      }
+    // Create default energy config
+    await query(
+      `INSERT INTO station_energy_configs (station_id, site_power_limit_kw, other_building_load_kw, safety_reserve_kw, control_mode, grid_cost_per_kwh, demand_charge_per_kw)
+       VALUES (?, ?, 30.00, 20.00, 'MONITOR', 8.50, 250.00)
+       ON DUPLICATE KEY UPDATE site_power_limit_kw = VALUES(site_power_limit_kw)`,
+      [stId, parseFloat(maxPower) || 120.0]
+    );
 
-      await connection.execute(
-        `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, new_value)
-         VALUES (?, 'CREATE_STATION', 'STATION', ?, ?)`,
-        [req.user?.id || 1, station_id, `Created station ${sName} (${station_id})`]
-      );
+    await recordAuditLog(query, {
+      userId: req.user?.id,
+      userRole: req.user?.role || "ADMIN",
+      action: "CREATE_STATION",
+      entityType: "STATION",
+      entityId: stId,
+      newValue: { station_id, stationName, city, totalSlots },
     });
 
-    res.status(201).json({ success: true, message: `Station ${station_id} created successfully in MySQL!`, station_id });
+    res.status(201).json({
+      success: true,
+      message: `Station ${station_id} created with ${slotsCount} configured chargers!`,
+      data: { id: stId, station_id, stationName, city },
+    });
   } catch (error) {
-    console.error("createStationAdmin error:", error);
     res.status(500).json({ success: false, message: "Error creating station", error: error.message });
   }
 };
@@ -1038,8 +1345,12 @@ export const createStationAdmin = async (req, res) => {
 export const updateStationAdmin = async (req, res) => {
   try {
     const { id } = req.params;
-    const { stationName, name, address, city, state, pincode, latitude, longitude, openingTime, closingTime, contactNumber, status, approvalStatus, maxPower, totalSlots } = req.body;
     const isNum = /^\d+$/.test(id);
+    const { stationName, address, city, state, pincode, latitude, longitude, maxPower, openingTime, closingTime, contactNumber, amenities, status, approvalStatus } = req.body;
+
+    const prevRows = await query("SELECT * FROM stations WHERE id = ? OR station_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (prevRows.length === 0) return res.status(404).json({ success: false, message: "Station not found." });
+    const prev = prevRows[0];
 
     await query(
       `UPDATE stations SET 
@@ -1050,33 +1361,42 @@ export const updateStationAdmin = async (req, res) => {
          pincode = COALESCE(?, pincode),
          latitude = COALESCE(?, latitude),
          longitude = COALESCE(?, longitude),
+         max_power = COALESCE(?, max_power),
          opening_time = COALESCE(?, opening_time),
          closing_time = COALESCE(?, closing_time),
          contact_number = COALESCE(?, contact_number),
+         amenities = COALESCE(?, amenities),
          status = COALESCE(?, status),
-         approval_status = COALESCE(?, approval_status),
-         max_power = COALESCE(?, max_power),
-         total_slots = COALESCE(?, total_slots)
-       WHERE id = ? OR station_id = ?`,
+         approval_status = COALESCE(?, approval_status)
+       WHERE id = ?`,
       [
-        stationName || name || null,
-        address || null,
+        stationName ? stationName.trim() : null,
+        address ? address.trim() : null,
         city || null,
         state || null,
         pincode || null,
-        latitude ? parseFloat(latitude) : null,
-        longitude ? parseFloat(longitude) : null,
+        latitude !== undefined ? parseFloat(latitude) : null,
+        longitude !== undefined ? parseFloat(longitude) : null,
+        maxPower !== undefined ? parseFloat(maxPower) : null,
         openingTime || null,
         closingTime || null,
         contactNumber || null,
-        status ? status.toUpperCase() : null,
-        approvalStatus ? approvalStatus.toUpperCase() : null,
-        maxPower ? parseFloat(maxPower) : null,
-        totalSlots ? parseInt(totalSlots, 10) : null,
-        isNum ? parseInt(id, 10) : 0,
-        id,
+        amenities || null,
+        status || null,
+        approvalStatus || null,
+        prev.id,
       ]
     );
+
+    await recordAuditLog(query, {
+      userId: req.user?.id,
+      userRole: req.user?.role || "ADMIN",
+      action: "UPDATE_STATION",
+      entityType: "STATION",
+      entityId: prev.id,
+      oldValue: prev,
+      newValue: { stationName, city, status, approvalStatus },
+    });
 
     res.json({ success: true, message: "Station updated successfully." });
   } catch (error) {
@@ -1088,105 +1408,797 @@ export const deleteStationAdmin = async (req, res) => {
   try {
     const { id } = req.params;
     const isNum = /^\d+$/.test(id);
-    const [station] = await query("SELECT id, station_id FROM stations WHERE id = ? OR station_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
-    if (!station) return res.status(404).json({ success: false, message: "Station not found." });
+    const prevRows = await query("SELECT id, station_id, station_name FROM stations WHERE id = ? OR station_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (prevRows.length === 0) return res.status(404).json({ success: false, message: "Station not found." });
+    const target = prevRows[0];
 
-    // Check active bookings or active charging sessions
-    const activeBookings = await query(
-      "SELECT id FROM bookings WHERE station_id = ? AND booking_status IN ('CONFIRMED', 'CHARGING', 'IN_PROGRESS', 'PROTECTED')",
-      [station.id]
-    );
-    if (activeBookings.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot delete station. There are ${activeBookings.length} active bookings assigned. Please cancel or reassign them first.`,
-      });
-    }
+    await query("DELETE FROM stations WHERE id = ?", [target.id]);
 
-    await query("UPDATE stations SET status = 'INACTIVE', approval_status = 'SUSPENDED' WHERE id = ?", [station.id]);
-    res.json({ success: true, message: "Station deactivated safely." });
+    await recordAuditLog(query, {
+      userId: req.user?.id,
+      userRole: req.user?.role || "ADMIN",
+      action: "DELETE_STATION",
+      entityType: "STATION",
+      entityId: target.id,
+      oldValue: target,
+    });
+
+    res.json({ success: true, message: `Station ${target.station_id} deleted successfully.` });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error deleting station", error: error.message });
   }
 };
 
-export const getPendingStations = async (req, res) => {
+/**
+ * 6. NETWORK LIVE MONITOR (B. Network Live Monitor & Safe Remote Commands)
+ */
+export const getNetworkLiveMonitor = async (req, res) => {
   try {
-    const stations = await query(
-      `SELECT s.*, u.name as owner_name, u.email as owner_email, u.user_id as owner_code 
-       FROM stations s 
-       LEFT JOIN users u ON s.owner_id = u.id 
-       WHERE s.approval_status = 'PENDING' OR s.status = 'PENDING'
-       ORDER BY s.id DESC`
-    );
-    res.json({ success: true, count: stations.length, data: stations });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error fetching pending stations", error: error.message });
-  }
-};
+    const { ownerId, stationId, city, status, lastSeenFilter } = req.query;
 
-export const approveStation = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const isNum = /^\d+$/.test(id);
-    await query(
-      "UPDATE stations SET approval_status = 'APPROVED', status = 'ACTIVE' WHERE id = ? OR station_id = ?",
-      [isNum ? parseInt(id, 10) : 0, id]
-    );
-    res.json({ success: true, message: "Station approved and published to Live EV Map!" });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error approving station", error: error.message });
-  }
-};
+    let whereSql = "WHERE 1=1";
+    const params = [];
 
-export const rejectStation = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const isNum = /^\d+$/.test(id);
-    await query(
-      "UPDATE stations SET approval_status = 'REJECTED', status = 'INACTIVE' WHERE id = ? OR station_id = ?",
-      [isNum ? parseInt(id, 10) : 0, id]
-    );
-    res.json({ success: true, message: "Station registration rejected." });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error rejecting station", error: error.message });
-  }
-};
+    if (ownerId && ownerId !== "ALL") {
+      whereSql += " AND s.owner_id = ?";
+      params.push(parseInt(ownerId, 10) || 0);
+    }
 
-export const suspendStation = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const isNum = /^\d+$/.test(id);
-    await query(
-      "UPDATE stations SET approval_status = 'SUSPENDED', status = 'MAINTENANCE' WHERE id = ? OR station_id = ?",
-      [isNum ? parseInt(id, 10) : 0, id]
+    if (stationId && stationId !== "ALL") {
+      const isNum = /^\d+$/.test(stationId);
+      whereSql += " AND (s.id = ? OR s.station_id = ?)";
+      params.push(isNum ? parseInt(stationId, 10) : 0, stationId);
+    }
+
+    if (city && city !== "ALL") {
+      whereSql += " AND LOWER(s.city) = ?";
+      params.push(city.toLowerCase());
+    }
+
+    const chargers = await query(
+      `SELECT c.*, 
+              s.id as station_db_id, s.station_id as station_code, s.station_name, s.city as station_city, s.address as station_address, s.status as station_status, s.approval_status as station_approval,
+              u.id as owner_db_id, u.user_id as owner_code, u.name as owner_name, u.company_name as owner_company, u.phone as owner_phone
+       FROM chargers c
+       JOIN stations s ON c.station_id = s.id
+       LEFT JOIN users u ON s.owner_id = u.id
+       ${whereSql}
+       ORDER BY s.id ASC, c.id ASC`,
+      params
     );
-    res.json({ success: true, message: "Station suspended from public view." });
+
+    // Fetch active sessions for all queried chargers
+    const activeSessions = await query(
+      `SELECT cs.*, u.name as driver_name, u.phone as driver_phone, v.registration_number, v.model as vehicle_model
+       FROM charging_sessions cs
+       LEFT JOIN users u ON cs.user_id = u.id
+       LEFT JOIN vehicles v ON cs.vehicle_id = v.id
+       WHERE cs.session_status IN ('CHARGING', 'STARTED', 'ACTIVE')`
+    );
+
+    // Fetch open maintenance faults
+    const openFaults = await query(
+      `SELECT mt.*, u.name as technician_name 
+       FROM maintenance_tickets mt 
+       LEFT JOIN users u ON mt.technician_id = u.id 
+       WHERE mt.status IN ('OPEN', 'ASSIGNED', 'IN_PROGRESS')`
+    );
+
+    const now = Date.now();
+    const formatted = chargers.map((c) => {
+      const session = activeSessions.find((s) => s.charger_id === c.id);
+      const fault = openFaults.find((f) => f.charger_id === c.id);
+
+      const timeoutSec = c.heartbeat_timeout_seconds || 60;
+      const lastHbTime = c.last_heartbeat ? new Date(c.last_heartbeat).getTime() : 0;
+      const secondsSinceLastHeartbeat = lastHbTime > 0 ? Math.round((now - lastHbTime) / 1000) : 9999;
+      const online = isChargerOnline(c.last_heartbeat, timeoutSec) || Boolean(c.is_simulated);
+      const isStale = secondsSinceLastHeartbeat > timeoutSec;
+
+      const derivedStatus = deriveChargerStatus(c, session);
+
+      return {
+        id: c.id,
+        chargerId: c.charger_id,
+        charger_id: c.charger_id,
+        name: c.charger_name,
+        chargerName: c.charger_name,
+        chargerType: c.charger_type || "DC_FAST",
+        powerKw: parseFloat(c.power_kw) || 60.0,
+        status: derivedStatus,
+        rawStatus: c.status,
+        isOnline: online,
+        isStaleCommunication: isStale && !c.is_simulated,
+        secondsSinceLastHeartbeat,
+        lastHeartbeat: c.last_heartbeat,
+        isSimulated: Boolean(c.is_simulated),
+        station: {
+          id: c.station_db_id,
+          stationId: c.station_code,
+          name: c.station_name,
+          city: c.station_city,
+          address: c.station_address,
+          status: c.station_status,
+          approvalStatus: c.station_approval,
+        },
+        owner: {
+          id: c.owner_db_id,
+          ownerId: c.owner_code,
+          name: c.owner_company || c.owner_name || "Network Operator",
+          phone: c.owner_phone,
+        },
+        activeSession: session
+          ? {
+              sessionId: session.session_id,
+              driverName: session.driver_name || "EV Driver",
+              driverPhone: session.driver_phone,
+              vehicleNumber: session.registration_number || "TN01EV0001",
+              vehicleModel: session.vehicle_model || "EV 4W",
+              startTime: session.start_time,
+              powerKw: parseFloat(session.power_kw) || 50.0,
+              energyKwh: parseFloat(session.energy_kwh) || 0.0,
+              batterySoc: session.battery_soc || 50,
+              durationMinutes: session.duration_minutes || 0,
+              totalAmount: parseFloat(session.total_amount) || 0.0,
+            }
+          : null,
+        fault: fault
+          ? {
+              ticketId: fault.ticket_id,
+              issueType: fault.issue_type,
+              severity: fault.severity || fault.priority || "MEDIUM",
+              status: fault.status,
+              openedAt: fault.opened_at,
+              technician: fault.technician_name,
+            }
+          : null,
+      };
+    });
+
+    // Filter by derived status if requested
+    let result = formatted;
+    if (status && status !== "ALL") {
+      result = result.filter((c) => c.status === status.toUpperCase());
+    }
+
+    if (lastSeenFilter === "STALE") {
+      result = result.filter((c) => c.isStaleCommunication);
+    } else if (lastSeenFilter === "ONLINE") {
+      result = result.filter((c) => c.isOnline);
+    } else if (lastSeenFilter === "OFFLINE") {
+      result = result.filter((c) => !c.isOnline);
+    }
+
+    res.json({
+      success: true,
+      count: result.length,
+      total: formatted.length,
+      data: result,
+      summary: {
+        total: formatted.length,
+        available: formatted.filter((c) => c.status === "AVAILABLE").length,
+        charging: formatted.filter((c) => c.status === "CHARGING").length,
+        reserved: formatted.filter((c) => c.status === "RESERVED").length,
+        occupied: formatted.filter((c) => c.status === "OCCUPIED").length,
+        faulted: formatted.filter((c) => c.status === "FAULTED" || c.status === "MAINTENANCE").length,
+        offline: formatted.filter((c) => c.status === "OFFLINE" || !c.isOnline).length,
+        staleWarnings: formatted.filter((c) => c.isStaleCommunication).length,
+      },
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error suspending station", error: error.message });
+    res.status(500).json({ success: false, message: "Error fetching network live monitor", error: error.message });
   }
 };
 
 /**
- * 6. CHARGERS MANAGEMENT (FULL CRUD)
- * GET /api/admin/chargers
+ * Safe Remote Command Execution
+ * POST /api/admin/chargers/:id/remote-command
+ */
+export const sendRemoteChargerCommand = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { command, payload = {}, isSimulator = true } = req.body;
+    const isNum = /^\d+$/.test(id);
+    const adminId = req.user?.id || 1;
+
+    const allowedCommands = ["REMOTE_START", "REMOTE_STOP", "RESET", "SET_AVAILABILITY", "UNLOCK_CONNECTOR", "SIMULATE_FAULT"];
+    if (!command || !allowedCommands.includes(command.toUpperCase())) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid command. Allowed: ${allowedCommands.join(", ")}`,
+      });
+    }
+
+    const chargers = await query("SELECT c.*, s.id as station_db_id FROM chargers c JOIN stations s ON c.station_id = s.id WHERE c.id = ? OR c.charger_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (chargers.length === 0) return res.status(404).json({ success: false, message: "Target charger not found." });
+    const charger = chargers[0];
+
+    const commandId = await getNextSequenceId("CMD", "remote_commands");
+    const cmdType = command.toUpperCase();
+
+    // 1. Record command in pending state
+    const cmdInsert = await query(
+      `INSERT INTO remote_commands (command_id, charger_id, station_id, user_id, command_type, target_payload, status, is_simulated)
+       VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?)`,
+      [commandId, charger.id, charger.station_id, adminId, cmdType, JSON.stringify(payload), isSimulator ? 1 : 0]
+    );
+
+    let resultingStatus = charger.status;
+    let commandStatus = "ACCEPTED";
+    let responseNote = `Command ${cmdType} accepted and executed successfully (Simulated)`;
+
+    // 2. Execute command action safely
+    if (cmdType === "REMOTE_START") {
+      resultingStatus = "CHARGING";
+      await query("UPDATE chargers SET status = 'CHARGING', is_simulated = 1, last_heartbeat = NOW() WHERE id = ?", [charger.id]);
+    } else if (cmdType === "REMOTE_STOP") {
+      resultingStatus = "AVAILABLE";
+      await query("UPDATE chargers SET status = 'AVAILABLE', last_heartbeat = NOW() WHERE id = ?", [charger.id]);
+      await query("UPDATE charging_sessions SET session_status = 'COMPLETED', end_time = NOW() WHERE charger_id = ? AND session_status = 'CHARGING'", [charger.id]);
+    } else if (cmdType === "RESET") {
+      resultingStatus = "AVAILABLE";
+      await query("UPDATE chargers SET status = 'AVAILABLE', error_code = NULL, error_message = NULL, last_heartbeat = NOW() WHERE id = ?", [charger.id]);
+    } else if (cmdType === "SET_AVAILABILITY") {
+      resultingStatus = payload.status ? payload.status.toUpperCase() : "AVAILABLE";
+      await query("UPDATE chargers SET status = ?, last_heartbeat = NOW() WHERE id = ?", [resultingStatus, charger.id]);
+    } else if (cmdType === "SIMULATE_FAULT") {
+      resultingStatus = "FAULTED";
+      await query("UPDATE chargers SET status = 'FAULTED', error_code = 'ERR_OVERTEMP', error_message = 'Over-temperature threshold exceeded', last_heartbeat = NOW() WHERE id = ?", [charger.id]);
+    }
+
+    // 3. Update command lifecycle in database
+    await query("UPDATE remote_commands SET status = 'COMPLETED', response_payload = ? WHERE id = ?", [
+      JSON.stringify({ resultingStatus, timestamp: new Date().toISOString() }),
+      cmdInsert.insertId,
+    ]);
+
+    // 4. Record audit log
+    await recordAuditLog(query, {
+      userId: adminId,
+      userRole: req.user?.role || "ADMIN",
+      action: `REMOTE_${cmdType}`,
+      entityType: "CHARGER",
+      entityId: charger.id,
+      oldValue: { status: charger.status },
+      newValue: { command: cmdType, resultingStatus, isSimulated: isSimulator },
+    });
+
+    // 5. Emit real-time updates to sockets
+    emitChargerStatusChanged({
+      chargerId: charger.charger_id,
+      id: charger.id,
+      stationId: charger.station_id,
+      status: resultingStatus,
+      isSimulated: isSimulator,
+    });
+
+    res.json({
+      success: true,
+      commandId,
+      status: "COMPLETED",
+      resultingStatus,
+      message: responseNote,
+      charger: {
+        id: charger.id,
+        chargerId: charger.charger_id,
+        status: resultingStatus,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error executing remote command", error: error.message });
+  }
+};
+
+/**
+ * 7. INCIDENT & MAINTENANCE CENTER (C. Incident and Maintenance Center)
+ */
+export const getMaintenanceAdmin = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
+    const { search, status, priority, severity, stationId } = req.query;
+
+    let whereSql = "WHERE 1=1";
+    const params = [];
+
+    if (status && status !== "ALL") {
+      whereSql += " AND mt.status = ?";
+      params.push(status.toUpperCase());
+    }
+
+    if (priority && priority !== "ALL") {
+      whereSql += " AND mt.priority = ?";
+      params.push(priority.toUpperCase());
+    }
+
+    if (severity && severity !== "ALL") {
+      whereSql += " AND mt.severity = ?";
+      params.push(severity.toUpperCase());
+    }
+
+    if (stationId && stationId !== "ALL") {
+      whereSql += " AND mt.station_id = ?";
+      params.push(parseInt(stationId, 10) || 0);
+    }
+
+    if (search && search.trim()) {
+      const q = `%${search.trim().toLowerCase()}%`;
+      whereSql += " AND (LOWER(mt.ticket_id) LIKE ? OR LOWER(mt.issue_type) LIKE ? OR LOWER(mt.description) LIKE ? OR LOWER(s.station_name) LIKE ? OR LOWER(tech.name) LIKE ?)";
+      params.push(q, q, q, q, q);
+    }
+
+    const [countRow] = await query(
+      `SELECT COUNT(*) as total 
+       FROM maintenance_tickets mt 
+       JOIN stations s ON mt.station_id = s.id 
+       LEFT JOIN users tech ON mt.technician_id = tech.id 
+       ${whereSql}`,
+      params
+    );
+    const total = countRow?.total || 0;
+
+    const tickets = await query(
+      `SELECT mt.*, 
+              s.station_name, s.station_id as station_code, s.city as station_city,
+              c.charger_name, c.charger_id as charger_code,
+              tech.name as technician_name, tech.email as technician_email, tech.phone as technician_phone,
+              admin_user.name as assigned_by_name
+       FROM maintenance_tickets mt
+       JOIN stations s ON mt.station_id = s.id
+       LEFT JOIN chargers c ON mt.charger_id = c.id
+       LEFT JOIN users tech ON mt.technician_id = tech.id
+       LEFT JOIN users admin_user ON mt.assigned_by = admin_user.id
+       ${whereSql}
+       ORDER BY FIELD(mt.status, 'OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'), mt.id DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    const formatted = tickets.map((t) => ({
+      id: t.id,
+      ticketId: t.ticket_id,
+      ticket_id: t.ticket_id,
+      stationId: t.station_id,
+      stationName: t.station_name,
+      stationCode: t.station_code,
+      stationCity: t.station_city,
+      chargerId: t.charger_id,
+      chargerName: t.charger_name || "General Station",
+      chargerCode: t.charger_code,
+      issueType: t.issue_type,
+      description: t.description,
+      priority: t.priority || "MEDIUM",
+      severity: t.severity || t.priority || "MEDIUM",
+      source: t.source || "MANUAL",
+      faultCode: t.fault_code || "—",
+      status: t.status || "OPEN",
+      openedAt: t.opened_at,
+      assignedAt: t.assigned_at,
+      startedAt: t.started_at,
+      resolvedAt: t.resolved_at,
+      resolutionNotes: t.resolution_notes,
+      technicianId: t.technician_id,
+      technicianName: t.technician_name || "Unassigned",
+      technicianPhone: t.technician_phone || "—",
+      assignedByName: t.assigned_by_name,
+      createdAt: t.created_at,
+    }));
+
+    res.json({
+      success: true,
+      count: formatted.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      data: formatted,
+      tickets: formatted,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error fetching maintenance incidents", error: error.message });
+  }
+};
+
+export const getIncidentsAdmin = getMaintenanceAdmin;
+
+export const createMaintenanceAdmin = async (req, res) => {
+  try {
+    const { stationId, chargerId, technicianId, issueType, description, priority = "MEDIUM", severity = "MEDIUM", faultCode, source = "MANUAL" } = req.body;
+    const adminId = req.user?.id || 1;
+
+    if (!stationId || !issueType || !description) {
+      return res.status(400).json({ success: false, message: "Station, Issue Type, and Description are required." });
+    }
+
+    const isStationNum = /^\d+$/.test(stationId);
+    const stationRows = await query("SELECT id, station_name FROM stations WHERE id = ? OR station_id = ?", [isStationNum ? parseInt(stationId, 10) : 0, stationId]);
+    if (stationRows.length === 0) return res.status(404).json({ success: false, message: "Station not found." });
+    const station = stationRows[0];
+
+    let resolvedChargerId = null;
+    if (chargerId) {
+      const isChargerNum = /^\d+$/.test(chargerId);
+      const chargerRows = await query("SELECT id FROM chargers WHERE id = ? OR charger_id = ?", [isChargerNum ? parseInt(chargerId, 10) : 0, chargerId]);
+      if (chargerRows.length > 0) resolvedChargerId = chargerRows[0].id;
+    }
+
+    // DUPLICATE PREVENTION: Prevent multiple identical open tickets for same charger and fault code
+    if (resolvedChargerId && faultCode) {
+      const existingOpen = await query(
+        "SELECT id, ticket_id FROM maintenance_tickets WHERE charger_id = ? AND fault_code = ? AND status IN ('OPEN', 'ASSIGNED', 'IN_PROGRESS')",
+        [resolvedChargerId, faultCode]
+      );
+      if (existingOpen.length > 0) {
+        return res.json({
+          success: true,
+          duplicateIgnored: true,
+          message: `Active incident ${existingOpen[0].ticket_id} already exists for this charger fault. Duplicate creation prevented.`,
+          data: { id: existingOpen[0].id, ticket_id: existingOpen[0].ticket_id },
+        });
+      }
+    }
+
+    const ticket_id = await getNextSequenceId("INC", "maintenance_tickets");
+
+    const insertRes = await query(
+      `INSERT INTO maintenance_tickets (ticket_id, station_id, charger_id, technician_id, assigned_by, issue_type, description, priority, severity, fault_code, source, status, assigned_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        ticket_id,
+        station.id,
+        resolvedChargerId,
+        technicianId ? parseInt(technicianId, 10) : null,
+        technicianId ? adminId : null,
+        issueType.trim(),
+        description.trim(),
+        priority.toUpperCase(),
+        severity.toUpperCase(),
+        faultCode || null,
+        source.toUpperCase(),
+        technicianId ? "ASSIGNED" : "OPEN",
+        technicianId ? new Date() : null,
+      ]
+    );
+
+    // If charger was specified, set charger to FAULTED or MAINTENANCE
+    if (resolvedChargerId) {
+      await query("UPDATE chargers SET status = 'FAULTED', error_code = ? WHERE id = ?", [faultCode || "ERR_INCIDENT", resolvedChargerId]);
+      emitFaultDetected({ chargerId: resolvedChargerId, stationId: station.id, ticketId: ticket_id, issueType });
+    }
+
+    await recordAuditLog(query, {
+      userId: adminId,
+      userRole: req.user?.role || "ADMIN",
+      action: "CREATE_INCIDENT",
+      entityType: "MAINTENANCE",
+      entityId: insertRes.insertId,
+      newValue: { ticket_id, issueType, stationId: station.id, chargerId: resolvedChargerId, priority, severity },
+    });
+
+    emitMaintenanceUpdated({ ticketId: ticket_id, stationId: station.id, status: technicianId ? "ASSIGNED" : "OPEN" });
+
+    res.status(201).json({
+      success: true,
+      message: `Incident ${ticket_id} created successfully.`,
+      data: { id: insertRes.insertId, ticket_id, issueType, status: technicianId ? "ASSIGNED" : "OPEN" },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error creating maintenance ticket", error: error.message });
+  }
+};
+
+export const createIncidentAdmin = createMaintenanceAdmin;
+
+export const updateMaintenanceAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const isNum = /^\d+$/.test(id);
+    const { technicianId, status, priority, severity, resolutionNotes, issueType, description } = req.body;
+    const adminId = req.user?.id || 1;
+
+    const tickets = await query("SELECT * FROM maintenance_tickets WHERE id = ? OR ticket_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (tickets.length === 0) return res.status(404).json({ success: false, message: "Incident ticket not found." });
+    const prev = tickets[0];
+
+    const isResolving = status && ["RESOLVED", "CLOSED"].includes(status.toUpperCase());
+    const isAssigning = technicianId && (!prev.technician_id || parseInt(technicianId, 10) !== prev.technician_id);
+
+    await query(
+      `UPDATE maintenance_tickets SET 
+         technician_id = COALESCE(?, technician_id),
+         assigned_by = COALESCE(?, assigned_by),
+         assigned_at = CASE WHEN ? IS NOT NULL AND assigned_at IS NULL THEN NOW() ELSE assigned_at END,
+         status = COALESCE(?, status),
+         priority = COALESCE(?, priority),
+         severity = COALESCE(?, severity),
+         resolution_notes = COALESCE(?, resolution_notes),
+         resolved_at = CASE WHEN ? = 1 THEN NOW() ELSE resolved_at END,
+         issue_type = COALESCE(?, issue_type),
+         description = COALESCE(?, description)
+       WHERE id = ?`,
+      [
+        technicianId !== undefined ? (technicianId ? parseInt(technicianId, 10) : null) : null,
+        isAssigning ? adminId : null,
+        isAssigning ? 1 : null,
+        status ? status.toUpperCase() : null,
+        priority ? priority.toUpperCase() : null,
+        severity ? severity.toUpperCase() : null,
+        resolutionNotes || null,
+        isResolving ? 1 : 0,
+        issueType || null,
+        description || null,
+        prev.id,
+      ]
+    );
+
+    // If resolved, restore charger status if needed
+    if (isResolving && prev.charger_id) {
+      await query("UPDATE chargers SET status = 'AVAILABLE', error_code = NULL, error_message = NULL WHERE id = ? AND status = 'FAULTED'", [prev.charger_id]);
+      emitChargerStatusChanged({ id: prev.charger_id, status: "AVAILABLE" });
+    }
+
+    await recordAuditLog(query, {
+      userId: adminId,
+      userRole: req.user?.role || "ADMIN",
+      action: "UPDATE_INCIDENT",
+      entityType: "MAINTENANCE",
+      entityId: prev.id,
+      oldValue: prev,
+      newValue: { status, technicianId, resolutionNotes, severity },
+    });
+
+    emitMaintenanceUpdated({ ticketId: prev.ticket_id, id: prev.id, status: status || prev.status });
+
+    res.json({ success: true, message: `Incident ticket ${prev.ticket_id} updated successfully.` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error updating incident", error: error.message });
+  }
+};
+
+export const updateIncidentAdmin = updateMaintenanceAdmin;
+
+export const deleteMaintenanceAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const isNum = /^\d+$/.test(id);
+    await query("DELETE FROM maintenance_tickets WHERE id = ? OR ticket_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    res.json({ success: true, message: "Incident ticket deleted." });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error deleting incident", error: error.message });
+  }
+};
+
+export const deleteIncidentAdmin = deleteMaintenanceAdmin;
+
+/**
+ * 8. PAYMENT RECONCILIATION (D. Payment Reconciliation)
+ */
+export const getPaymentsAdmin = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
+    const { search, status, gateway, reconciliationStatus } = req.query;
+
+    let whereSql = "WHERE 1=1";
+    const params = [];
+
+    if (status && status !== "ALL") {
+      whereSql += " AND p.payment_status = ?";
+      params.push(status.toUpperCase());
+    }
+
+    if (gateway && gateway !== "ALL") {
+      whereSql += " AND LOWER(p.gateway) = ?";
+      params.push(gateway.toLowerCase());
+    }
+
+    if (reconciliationStatus && reconciliationStatus !== "ALL") {
+      whereSql += " AND p.reconciliation_status = ?";
+      params.push(reconciliationStatus.toUpperCase());
+    }
+
+    if (search && search.trim()) {
+      const q = `%${search.trim().toLowerCase()}%`;
+      whereSql += " AND (LOWER(p.payment_id) LIKE ? OR LOWER(p.gateway_payment_id) LIKE ? OR LOWER(u.name) LIKE ? OR LOWER(u.email) LIKE ? OR LOWER(b.booking_id) LIKE ?)";
+      params.push(q, q, q, q, q);
+    }
+
+    const [countRow] = await query(
+      `SELECT COUNT(*) as total 
+       FROM payments p 
+       LEFT JOIN users u ON p.user_id = u.id 
+       LEFT JOIN bookings b ON (p.booking_id = b.id OR p.booking_id = b.booking_id)
+       ${whereSql}`,
+      params
+    );
+    const total = countRow?.total || 0;
+
+    const payments = await query(
+      `SELECT p.*, 
+              u.name as user_name, u.email as user_email, u.phone as user_phone, u.user_id as user_code,
+              b.booking_id as booking_code, b.booking_status, b.start_time as booking_start, b.end_time as booking_end,
+              s.station_name, s.city as station_city,
+              cs.session_id as session_code, cs.session_status, cs.energy_kwh,
+              admin_user.name as refunded_by_name
+       FROM payments p
+       LEFT JOIN users u ON p.user_id = u.id
+       LEFT JOIN bookings b ON (p.booking_id = b.id OR p.booking_id = b.booking_id)
+       LEFT JOIN stations s ON b.station_id = s.id
+       LEFT JOIN charging_sessions cs ON (p.session_id = cs.id OR b.id = cs.booking_id)
+       LEFT JOIN users admin_user ON p.refunded_by = admin_user.id
+       ${whereSql}
+       ORDER BY p.id DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    const formatted = payments.map((p) => {
+      // Determine reconciliation integrity status
+      let reconStatus = p.reconciliation_status || "MATCHED";
+      let reconNote = "Verified record";
+
+      if (p.payment_status === "SUCCESS" && (!p.booking_code && !p.session_code)) {
+        reconStatus = "UNMATCHED";
+        reconNote = "Payment recorded without linked booking/session";
+      } else if (p.payment_status === "SUCCESS" && p.booking_status === "CANCELLED") {
+        reconStatus = "DISCREPANCY";
+        reconNote = "Payment captured but booking marked cancelled";
+      }
+
+      return {
+        id: p.id,
+        paymentId: p.payment_id,
+        payment_id: p.payment_id,
+        bookingId: p.booking_code || (p.booking_id ? `BKG${String(p.booking_id).padStart(6, "0")}` : "—"),
+        sessionId: p.session_code || "—",
+        userId: p.user_id,
+        userCode: p.user_code,
+        userName: p.user_name || "EV Driver",
+        userEmail: p.user_email,
+        stationName: p.station_name || "EV Charging Station",
+        stationCity: p.station_city || "Chennai",
+        amount: parseFloat(p.amount) || 0.0,
+        currency: p.currency || "INR",
+        gateway: p.gateway || "RAZORPAY",
+        gatewayPaymentId: p.gateway_payment_id || p.gateway_order_id || "—",
+        paymentMethod: p.payment_method || "CARD",
+        paymentStatus: p.payment_status || "SUCCESS",
+        status: p.payment_status || "SUCCESS",
+        reconciliationStatus: reconStatus,
+        reconciliationNote: reconNote,
+        refundAmount: parseFloat(p.refund_amount) || 0.0,
+        refundReason: p.refund_reason,
+        refundedAt: p.refunded_at,
+        refundedByName: p.refunded_by_name,
+        energyKwh: parseFloat(p.energy_kwh) || 0.0,
+        paidAt: p.paid_at || p.created_at,
+        createdAt: p.created_at,
+      };
+    });
+
+    res.json({
+      success: true,
+      count: formatted.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      data: formatted,
+      payments: formatted,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error fetching payments reconciliation", error: error.message });
+  }
+};
+
+export const getPaymentsReconciliation = getPaymentsAdmin;
+
+export const refundPaymentAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { refundAmount, reason = "Customer requested authorized refund" } = req.body;
+    const isNum = /^\d+$/.test(id);
+    const adminId = req.user?.id || 1;
+
+    const payments = await query("SELECT * FROM payments WHERE id = ? OR payment_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (payments.length === 0) return res.status(404).json({ success: false, message: "Payment record not found." });
+    const payment = payments[0];
+
+    if (payment.payment_status === "REFUNDED") {
+      return res.status(400).json({ success: false, message: "Payment has already been refunded." });
+    }
+
+    const amountToRefund = refundAmount !== undefined ? parseFloat(refundAmount) : parseFloat(payment.amount);
+
+    await query(
+      `UPDATE payments SET 
+         payment_status = 'REFUNDED',
+         refund_amount = ?,
+         refund_reason = ?,
+         refunded_by = ?,
+         refunded_at = NOW(),
+         reconciliation_status = 'RECONCILED'
+       WHERE id = ?`,
+      [amountToRefund, reason.trim(), adminId, payment.id]
+    );
+
+    // If payment was made via wallet, credit balance back
+    if (payment.payment_method === "WALLET" && payment.user_id) {
+      await query("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?", [amountToRefund, payment.user_id]);
+      const txId = await getNextSequenceId("WTX", "wallet_transactions");
+      const [uRow] = await query("SELECT wallet_balance FROM users WHERE id = ?", [payment.user_id]);
+      await query(
+        `INSERT INTO wallet_transactions (transaction_id, user_id, type, amount, balance_after, description, booking_id)
+         VALUES (?, ?, 'CREDIT', ?, ?, ?, ?)`,
+        [txId, payment.user_id, amountToRefund, uRow?.wallet_balance || 0, `Refund: ${reason}`, payment.booking_id]
+      );
+    }
+
+    await recordAuditLog(query, {
+      userId: adminId,
+      userRole: req.user?.role || "ADMIN",
+      action: "REFUND_PAYMENT",
+      entityType: "PAYMENT",
+      entityId: payment.id,
+      oldValue: { status: payment.payment_status, amount: payment.amount },
+      newValue: { status: "REFUNDED", refundAmount: amountToRefund, reason },
+    });
+
+    emitPaymentUpdated({ id: payment.id, paymentId: payment.payment_id, paymentStatus: "REFUNDED", refundAmount: amountToRefund });
+
+    res.json({
+      success: true,
+      message: `Refund of ₹${amountToRefund.toFixed(2)} processed successfully for payment ${payment.payment_id}.`,
+      payment: {
+        id: payment.id,
+        paymentId: payment.payment_id,
+        paymentStatus: "REFUNDED",
+        refundAmount: amountToRefund,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error processing refund", error: error.message });
+  }
+};
+
+export const updatePaymentAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const isNum = /^\d+$/.test(id);
+    const { paymentStatus, reconciliationStatus } = req.body;
+
+    await query(
+      `UPDATE payments SET 
+         payment_status = COALESCE(?, payment_status),
+         reconciliation_status = COALESCE(?, reconciliation_status)
+       WHERE id = ? OR payment_id = ?`,
+      [paymentStatus ? paymentStatus.toUpperCase() : null, reconciliationStatus ? reconciliationStatus.toUpperCase() : null, isNum ? parseInt(id, 10) : 0, id]
+    );
+
+    res.json({ success: true, message: "Payment updated." });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error updating payment", error: error.message });
+  }
+};
+
+/**
+ * 9. CHARGERS MANAGEMENT (CRUD)
  */
 export const getChargersAdmin = async (req, res) => {
   try {
     const { stationId, status } = req.query;
     let sql = `
-      SELECT c.*, s.station_name, s.station_id as station_code, s.city as station_city,
-             COALESCE((SELECT cs.session_id FROM charging_sessions cs WHERE cs.charger_id = c.id AND cs.session_status IN ('CHARGING', 'STARTED', 'ACTIVE') LIMIT 1), NULL) as current_session_id
+      SELECT c.*, s.station_name, s.station_id as station_code, s.city as station_city
       FROM chargers c
       JOIN stations s ON c.station_id = s.id
       WHERE 1=1
     `;
     const params = [];
 
-    if (stationId) {
+    if (stationId && stationId !== "ALL") {
       const isNum = /^\d+$/.test(stationId);
-      sql += ` AND (s.station_id = ? OR s.id = ?)`;
-      params.push(stationId, isNum ? parseInt(stationId, 10) : 0);
+      sql += ` AND (s.id = ? OR s.station_id = ?)`;
+      params.push(isNum ? parseInt(stationId, 10) : 0, stationId);
     }
 
     if (status && status !== "ALL") {
@@ -1194,66 +2206,77 @@ export const getChargersAdmin = async (req, res) => {
       params.push(status.toUpperCase());
     }
 
-    sql += ` ORDER BY c.id ASC`;
-    const rows = await query(sql, params);
+    sql += ` ORDER BY c.station_id ASC, c.id ASC`;
+    const chargers = await query(sql, params);
 
-    const formatted = rows.map((c) => ({
+    const formatted = chargers.map((c) => ({
       id: c.id,
-      chargerId: c.charger_id || `CHG${String(c.id).padStart(6, "0")}`,
-      charger_id: c.charger_id || `CHG${String(c.id).padStart(6, "0")}`,
+      chargerId: c.charger_id,
+      charger_id: c.charger_id,
+      name: c.charger_name,
+      chargerName: c.charger_name,
       stationId: c.station_id,
       stationName: c.station_name,
+      stationCode: c.station_code,
       stationCity: c.station_city,
-      chargerName: c.charger_name,
-      charger_name: c.charger_name,
       chargerType: c.charger_type || "DC_FAST",
       powerKw: parseFloat(c.power_kw) || 60.0,
-      power_kw: parseFloat(c.power_kw) || 60.0,
       status: c.status || "AVAILABLE",
-      currentSessionId: c.current_session_id,
-      pricePerKwh: 18.0,
-      connectorType: "CCS2",
-      lastHeartbeat: new Date().toISOString(),
-      firmwareVersion: "v2.6.4-prod",
+      connectorCount: c.connector_count || 1,
+      lastHeartbeat: c.last_heartbeat,
+      isOnline: isChargerOnline(c.last_heartbeat, c.heartbeat_timeout_seconds || 60),
+      isSimulated: Boolean(c.is_simulated),
+      createdAt: c.created_at,
     }));
 
-    res.json({ success: true, count: formatted.length, data: formatted, chargers: formatted });
+    res.json({ success: true, count: formatted.length, data: formatted });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error fetching admin chargers", error: error.message });
+    res.status(500).json({ success: false, message: "Error fetching chargers", error: error.message });
   }
 };
 
 export const createChargerAdmin = async (req, res) => {
   try {
     const { stationId, chargerName, chargerType = "DC_FAST", powerKw = 60.0, status = "AVAILABLE" } = req.body;
-    if (!stationId) return res.status(400).json({ success: false, message: "Station is required." });
+    if (!stationId || !chargerName) return res.status(400).json({ success: false, message: "Station and Charger Name are required." });
 
     const isNum = /^\d+$/.test(stationId);
-    const [station] = await query("SELECT id FROM stations WHERE id = ? OR station_id = ?", [isNum ? parseInt(stationId, 10) : 0, stationId]);
-    if (!station) return res.status(404).json({ success: false, message: "Station not found." });
+    const stationRows = await query("SELECT id, station_id FROM stations WHERE id = ? OR station_id = ?", [isNum ? parseInt(stationId, 10) : 0, stationId]);
+    if (stationRows.length === 0) return res.status(404).json({ success: false, message: "Station not found." });
+    const station = stationRows[0];
 
-    const [maxRow] = await query("SELECT COALESCE(MAX(id), 0) as maxId FROM chargers");
-    const nextId = (maxRow?.maxId || 0) + 1;
-    const charger_id = `CHG${String(nextId).padStart(6, "0")}`;
+    const charger_id = await getNextSequenceId("CHG", "chargers");
 
-    let createdId = null;
-    await transaction(async (connection) => {
-      const [chgRes] = await connection.execute(
-        `INSERT INTO chargers (charger_id, station_id, charger_name, charger_type, power_kw, status, connector_count)
-         VALUES (?, ?, ?, ?, ?, ?, 1)`,
-        [charger_id, station.id, chargerName || `Bay ${charger_id}`, chargerType, parseFloat(powerKw) || 60.0, status]
-      );
-      createdId = chgRes.insertId;
+    const insertRes = await query(
+      `INSERT INTO chargers (charger_id, station_id, charger_name, charger_type, power_kw, status, last_heartbeat)
+       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      [charger_id, station.id, chargerName.trim(), chargerType.toUpperCase(), parseFloat(powerKw) || 60.0, status.toUpperCase()]
+    );
 
-      const connector_id = `CON${String(createdId).padStart(6, "0")}`;
-      await connection.execute(
-        `INSERT INTO charger_connectors (connector_id, charger_id, connector_type, power_kw, status)
-         VALUES (?, ?, 'CCS2', ?, 'AVAILABLE')`,
-        [connector_id, createdId, parseFloat(powerKw) || 60.0]
-      );
+    await query(
+      `INSERT INTO charger_connectors (connector_id, charger_id, connector_type, power_kw, status)
+       VALUES (?, ?, ?, ?, ?)`,
+      [`${charger_id}-CON01`, insertRes.insertId, chargerType.toUpperCase(), parseFloat(powerKw) || 60.0, status.toUpperCase()]
+    );
+
+    await query("UPDATE stations SET total_slots = total_slots + 1, available_slots = available_slots + 1 WHERE id = ?", [station.id]);
+
+    await recordAuditLog(query, {
+      userId: req.user?.id,
+      userRole: req.user?.role || "ADMIN",
+      action: "CREATE_CHARGER",
+      entityType: "CHARGER",
+      entityId: insertRes.insertId,
+      newValue: { charger_id, chargerName, stationId: station.id, chargerType, powerKw },
     });
 
-    res.status(201).json({ success: true, message: `Charger ${charger_id} created successfully!`, charger_id });
+    emitChargerStatusChanged({ id: insertRes.insertId, chargerId: charger_id, status: status.toUpperCase() });
+
+    res.status(201).json({
+      success: true,
+      message: `Charger ${charger_id} created successfully!`,
+      data: { id: insertRes.insertId, charger_id, chargerName },
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error creating charger", error: error.message });
   }
@@ -1262,8 +2285,12 @@ export const createChargerAdmin = async (req, res) => {
 export const updateChargerAdmin = async (req, res) => {
   try {
     const { id } = req.params;
-    const { chargerName, chargerType, powerKw, status } = req.body;
     const isNum = /^\d+$/.test(id);
+    const { chargerName, chargerType, powerKw, status } = req.body;
+
+    const prevRows = await query("SELECT * FROM chargers WHERE id = ? OR charger_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (prevRows.length === 0) return res.status(404).json({ success: false, message: "Charger not found." });
+    const prev = prevRows[0];
 
     await query(
       `UPDATE chargers SET 
@@ -1271,21 +2298,29 @@ export const updateChargerAdmin = async (req, res) => {
          charger_type = COALESCE(?, charger_type),
          power_kw = COALESCE(?, power_kw),
          status = COALESCE(?, status)
-       WHERE id = ? OR charger_id = ?`,
+       WHERE id = ?`,
       [
-        chargerName || null,
-        chargerType || null,
-        powerKw ? parseFloat(powerKw) : null,
+        chargerName ? chargerName.trim() : null,
+        chargerType ? chargerType.toUpperCase() : null,
+        powerKw !== undefined ? parseFloat(powerKw) : null,
         status ? status.toUpperCase() : null,
-        isNum ? parseInt(id, 10) : 0,
-        id,
+        prev.id,
       ]
     );
 
-    const [updated] = await query("SELECT * FROM chargers WHERE id = ? OR charger_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
-    if (updated) emitChargerStatusChanged(updated);
+    await recordAuditLog(query, {
+      userId: req.user?.id,
+      userRole: req.user?.role || "ADMIN",
+      action: "UPDATE_CHARGER",
+      entityType: "CHARGER",
+      entityId: prev.id,
+      oldValue: prev,
+      newValue: { chargerName, chargerType, powerKw, status },
+    });
 
-    res.json({ success: true, message: "Charger updated successfully.", data: updated });
+    if (status) emitChargerStatusChanged({ id: prev.id, chargerId: prev.charger_id, status });
+
+    res.json({ success: true, message: "Charger updated successfully." });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error updating charger", error: error.message });
   }
@@ -1295,152 +2330,163 @@ export const deleteChargerAdmin = async (req, res) => {
   try {
     const { id } = req.params;
     const isNum = /^\d+$/.test(id);
-    await query("UPDATE chargers SET status = 'OFFLINE' WHERE id = ? OR charger_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
-    res.json({ success: true, message: "Charger deactivated successfully." });
+    const prevRows = await query("SELECT id, charger_id, station_id FROM chargers WHERE id = ? OR charger_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (prevRows.length === 0) return res.status(404).json({ success: false, message: "Charger not found." });
+    const target = prevRows[0];
+
+    await query("DELETE FROM chargers WHERE id = ?", [target.id]);
+    await query("UPDATE stations SET total_slots = GREATEST(1, total_slots - 1), available_slots = GREATEST(0, available_slots - 1) WHERE id = ?", [target.station_id]);
+
+    await recordAuditLog(query, {
+      userId: req.user?.id,
+      userRole: req.user?.role || "ADMIN",
+      action: "DELETE_CHARGER",
+      entityType: "CHARGER",
+      entityId: target.id,
+      oldValue: target,
+    });
+
+    res.json({ success: true, message: `Charger ${target.charger_id} deleted successfully.` });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error deleting charger", error: error.message });
   }
 };
 
 /**
- * 7. BOOKINGS MANAGEMENT (FULL CRUD)
- * GET /api/admin/bookings
+ * 10. BOOKINGS MANAGEMENT (CRUD)
  */
 export const getBookingsAdmin = async (req, res) => {
   try {
-    const { status, search, stationId } = req.query;
-    let sql = `
-      SELECT b.*,
-             u.name as customer_name, u.email as customer_email, u.phone as customer_phone, u.user_id as customer_code,
-             s.station_name, s.address as station_address, s.station_id as station_id_code,
-             v.registration_number, v.registration_number as vehicle_number, v.brand, v.model, v.vehicle_type,
-             c.charger_name, c.charger_type, c.power_kw, c.charger_id as charger_id_code
-      FROM bookings b
-      LEFT JOIN users u ON b.user_id = u.id
-      LEFT JOIN stations s ON b.station_id = s.id
-      LEFT JOIN chargers c ON b.charger_id = c.id
-      LEFT JOIN vehicles v ON b.vehicle_id = v.id
-      WHERE 1=1
-    `;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
+    const { search, status, paymentStatus, stationId } = req.query;
+
+    let whereSql = "WHERE 1=1";
     const params = [];
 
     if (status && status !== "ALL") {
-      sql += ` AND b.booking_status = ?`;
+      whereSql += " AND b.booking_status = ?";
       params.push(status.toUpperCase());
     }
 
-    if (stationId) {
+    if (paymentStatus && paymentStatus !== "ALL") {
+      whereSql += " AND b.payment_status = ?";
+      params.push(paymentStatus.toUpperCase());
+    }
+
+    if (stationId && stationId !== "ALL") {
       const isNum = /^\d+$/.test(stationId);
-      sql += ` AND (s.station_id = ? OR s.id = ?)`;
-      params.push(stationId, isNum ? parseInt(stationId, 10) : 0);
+      whereSql += " AND (s.id = ? OR s.station_id = ?)";
+      params.push(isNum ? parseInt(stationId, 10) : 0, stationId);
     }
 
     if (search && search.trim()) {
       const q = `%${search.trim().toLowerCase()}%`;
-      sql += ` AND (LOWER(b.booking_id) LIKE ? OR LOWER(u.name) LIKE ? OR LOWER(u.email) LIKE ? OR LOWER(v.registration_number) LIKE ? OR LOWER(s.station_name) LIKE ?)`;
+      whereSql += " AND (LOWER(b.booking_id) LIKE ? OR LOWER(u.name) LIKE ? OR LOWER(u.email) LIKE ? OR LOWER(s.station_name) LIKE ? OR LOWER(v.registration_number) LIKE ?)";
       params.push(q, q, q, q, q);
     }
 
-    sql += ` ORDER BY b.id DESC`;
+    const [countRow] = await query(
+      `SELECT COUNT(*) as total 
+       FROM bookings b 
+       LEFT JOIN users u ON b.user_id = u.id 
+       LEFT JOIN stations s ON b.station_id = s.id 
+       LEFT JOIN vehicles v ON b.vehicle_id = v.id 
+       ${whereSql}`,
+      params
+    );
+    const total = countRow?.total || 0;
 
-    const rawRows = await query(sql, params);
-    const formatted = rawRows.map((b) => formatBooking(b));
+    const rawBookings = await query(
+      `SELECT b.*, 
+              u.name as customer_name, u.email as customer_email, u.phone as customer_phone,
+              s.station_name, s.address as station_address, s.city as station_city, s.station_id as station_id_code,
+              v.registration_number, v.brand, v.model, v.vehicle_type,
+              c.charger_name, c.charger_type, c.power_kw
+       FROM bookings b
+       LEFT JOIN users u ON b.user_id = u.id
+       LEFT JOIN stations s ON b.station_id = s.id
+       LEFT JOIN chargers c ON b.charger_id = c.id
+       LEFT JOIN vehicles v ON b.vehicle_id = v.id
+       ${whereSql}
+       ORDER BY b.id DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    const formatted = rawBookings.map(formatBooking);
 
     res.json({
       success: true,
       count: formatted.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
       data: formatted,
       bookings: formatted,
     });
   } catch (error) {
-    console.error("getBookingsAdmin error:", error);
-    res.status(500).json({ success: false, message: "Error fetching admin bookings", error: error.message });
+    res.status(500).json({ success: false, message: "Error fetching bookings", error: error.message });
   }
 };
 
 export const createBookingAdmin = async (req, res) => {
   try {
-    const {
-      customerId,
-      userId,
-      stationId,
-      chargerId,
-      bookingDate = new Date().toISOString().split("T")[0],
-      startTime = "10:00:00",
-      duration = 60,
-      durationMinutes,
-      amount = 400.0,
-      paymentStatus = "SUCCESS",
-      bookingStatus = "CONFIRMED",
-    } = req.body;
+    const { userId, stationId, chargerId, bookingDate, startTime, endTime = "07:00:00", durationMinutes = 60, estimatedAmount = 400.0 } = req.body;
+    if (!userId || !stationId || !chargerId || !bookingDate || !startTime) {
+      return res.status(400).json({ success: false, message: "User, Station, Charger, Date, and Start Time are required." });
+    }
 
-    const dur = parseInt(durationMinutes || duration, 10) || 60;
-    const targetUserId = parseInt(userId || customerId, 10) || 1;
-    const targetStationId = parseInt(stationId, 10) || 1;
-    const targetChargerId = parseInt(chargerId, 10) || 1;
-
-    const [maxRow] = await query("SELECT COALESCE(MAX(id), 0) as maxId FROM bookings");
-    const nextId = (maxRow?.maxId || 0) + 1;
-    const booking_id = `EV${String(nextId).padStart(6, "0")}`;
-
-    const [vRows] = await query("SELECT id FROM vehicles WHERE user_id = ? LIMIT 1", [targetUserId]);
-    const vehicleId = vRows[0]?.id || null;
+    const booking_id = await getNextSequenceId("BKG", "bookings");
 
     const insertRes = await query(
-      `INSERT INTO bookings (booking_id, user_id, vehicle_id, station_id, charger_id, booking_date, start_time, end_time, duration_minutes, estimated_amount, booking_status, payment_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ADDTIME(?, SEC_TO_TIME(? * 60)), ?, ?, ?, ?)`,
-      [booking_id, targetUserId, vehicleId, targetStationId, targetChargerId, bookingDate, startTime, startTime, dur, dur, parseFloat(amount) || 400.0, bookingStatus, paymentStatus]
+      `INSERT INTO bookings (booking_id, user_id, station_id, charger_id, booking_date, start_time, end_time, duration_minutes, estimated_amount, booking_status, payment_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'CONFIRMED', 'SUCCESS')`,
+      [booking_id, parseInt(userId, 10), parseInt(stationId, 10), parseInt(chargerId, 10), bookingDate, startTime, endTime, parseInt(durationMinutes, 10) || 60, parseFloat(estimatedAmount) || 400.0]
     );
 
-    const [created] = await query("SELECT * FROM bookings WHERE id = ?", [insertRes.insertId]);
-    emitBookingCreated(created);
+    emitBookingCreated({ id: insertRes.insertId, bookingId: booking_id, stationId, status: "CONFIRMED" });
 
     res.status(201).json({
       success: true,
       message: `Booking ${booking_id} created successfully!`,
-      booking_id,
-      data: created,
+      data: { id: insertRes.insertId, booking_id },
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error creating admin booking", error: error.message });
+    res.status(500).json({ success: false, message: "Error creating booking", error: error.message });
   }
 };
 
 export const updateBookingAdmin = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, bookingStatus, paymentStatus, startTime, bookingDate } = req.body;
     const isNum = /^\d+$/.test(id);
-    const targetStatus = (bookingStatus || status || "").toUpperCase();
+    const { bookingStatus, paymentStatus, startTime, endTime } = req.body;
+
+    const prevRows = await query("SELECT * FROM bookings WHERE id = ? OR booking_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    if (prevRows.length === 0) return res.status(404).json({ success: false, message: "Booking not found." });
+    const prev = prevRows[0];
 
     await query(
       `UPDATE bookings SET 
          booking_status = COALESCE(?, booking_status),
          payment_status = COALESCE(?, payment_status),
          start_time = COALESCE(?, start_time),
-         booking_date = COALESCE(?, booking_date)
-       WHERE id = ? OR booking_id = ?`,
+         end_time = COALESCE(?, end_time)
+       WHERE id = ?`,
       [
-        targetStatus || null,
+        bookingStatus ? bookingStatus.toUpperCase() : null,
         paymentStatus ? paymentStatus.toUpperCase() : null,
         startTime || null,
-        bookingDate || null,
-        isNum ? parseInt(id, 10) : 0,
-        id,
+        endTime || null,
+        prev.id,
       ]
     );
 
-    // If marked CHARGING, update charger status
-    const [booking] = await query("SELECT * FROM bookings WHERE id = ? OR booking_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
-    if (booking && targetStatus === "CHARGING") {
-      await query("UPDATE chargers SET status = 'CHARGING' WHERE id = ?", [booking.charger_id]);
-    } else if (booking && (targetStatus === "COMPLETED" || targetStatus === "CANCELLED" || targetStatus === "NO_SHOW")) {
-      await query("UPDATE chargers SET status = 'AVAILABLE' WHERE id = ?", [booking.charger_id]);
-    }
+    emitBookingUpdated({ id: prev.id, bookingId: prev.booking_id, bookingStatus, paymentStatus });
 
-    if (booking) emitBookingUpdated(booking);
-
-    res.json({ success: true, message: `Booking status updated to ${targetStatus || "SAVED"}.` });
+    res.json({ success: true, message: "Booking updated successfully." });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error updating booking", error: error.message });
   }
@@ -1450,411 +2496,241 @@ export const deleteBookingAdmin = async (req, res) => {
   try {
     const { id } = req.params;
     const isNum = /^\d+$/.test(id);
-    const [booking] = await query("SELECT * FROM bookings WHERE id = ? OR booking_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
-    if (!booking) return res.status(404).json({ success: false, message: "Booking not found." });
-
-    // Mark CANCELLED and free up charger
-    await query("UPDATE bookings SET booking_status = 'CANCELLED' WHERE id = ?", [booking.id]);
-    await query("UPDATE chargers SET status = 'AVAILABLE' WHERE id = ?", [booking.charger_id]);
-
-    res.json({ success: true, message: "Booking cancelled successfully." });
+    await query("DELETE FROM bookings WHERE id = ? OR booking_id = ?", [isNum ? parseInt(id, 10) : 0, id]);
+    res.json({ success: true, message: "Booking deleted." });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error cancelling booking", error: error.message });
+    res.status(500).json({ success: false, message: "Error deleting booking", error: error.message });
   }
 };
 
 /**
- * 8. PAYMENTS MANAGEMENT
- * GET /api/admin/payments
- */
-export const getPaymentsAdmin = async (req, res) => {
-  try {
-    const payments = await query(
-      `SELECT p.*, u.name as customer_name, u.email as customer_email, u.phone as customer_phone,
-              b.booking_id as booking_code, s.station_name
-       FROM payments p
-       LEFT JOIN users u ON p.user_id = u.id
-       LEFT JOIN bookings b ON (p.booking_id = b.id OR p.booking_id = b.booking_id)
-       LEFT JOIN stations s ON b.station_id = s.id
-       ORDER BY p.id DESC`
-    );
-
-    const formatted = payments.map((p) => ({
-      id: p.id,
-      paymentId: p.payment_id || `PAY${String(p.id).padStart(6, "0")}`,
-      payment_id: p.payment_id || `PAY${String(p.id).padStart(6, "0")}`,
-      bookingId: p.booking_code || (p.booking_id ? `EV${String(p.booking_id).padStart(6, "0")}` : "—"),
-      customerName: p.customer_name || "Guest Customer",
-      customerEmail: p.customer_email || "—",
-      amount: parseFloat(p.amount) || 0,
-      paymentMethod: p.payment_method || "RAZORPAY",
-      transactionId: p.gateway_payment_id || p.payment_id || `TXN${String(p.id).padStart(8, "0")}`,
-      paymentStatus: p.payment_status || "SUCCESS",
-      date: p.paid_at || p.created_at,
-      paidAt: p.paid_at || p.created_at,
-      stationName: p.station_name || "EV Power Hub",
-    }));
-
-    res.json({ success: true, count: formatted.length, data: formatted, payments: formatted });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error fetching payments", error: error.message });
-  }
-};
-
-export const updatePaymentAdmin = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { paymentStatus, status } = req.body;
-    const isNum = /^\d+$/.test(id);
-    const targetStatus = (paymentStatus || status || "SUCCESS").toUpperCase();
-
-    await query("UPDATE payments SET payment_status = ? WHERE id = ? OR payment_id = ?", [
-      targetStatus,
-      isNum ? parseInt(id, 10) : 0,
-      id,
-    ]);
-
-    res.json({ success: true, message: `Payment status updated to ${targetStatus}.` });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error updating payment", error: error.message });
-  }
-};
-
-/**
- * 9. LIVE CHARGING SESSIONS MANAGEMENT
- * GET /api/admin/sessions
+ * 11. CHARGING SESSIONS
  */
 export const getSessionsAdmin = async (req, res) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
+    const { status, stationId } = req.query;
+
+    let whereSql = "WHERE 1=1";
+    const params = [];
+
+    if (status && status !== "ALL") {
+      whereSql += " AND cs.session_status = ?";
+      params.push(status.toUpperCase());
+    }
+
+    if (stationId && stationId !== "ALL") {
+      const isNum = /^\d+$/.test(stationId);
+      whereSql += " AND (s.id = ? OR s.station_id = ?)";
+      params.push(isNum ? parseInt(stationId, 10) : 0, stationId);
+    }
+
+    const [countRow] = await query(`SELECT COUNT(*) as total FROM charging_sessions cs JOIN stations s ON cs.station_id = s.id ${whereSql}`, params);
+    const total = countRow?.total || 0;
+
     const sessions = await query(
-      `SELECT cs.*, u.name as customer_name, u.email as customer_email,
-              s.station_name, c.charger_name, v.registration_number
+      `SELECT cs.*, 
+              u.name as customer_name, u.email as customer_email, u.phone as customer_phone,
+              s.station_name, s.city as station_city, s.station_id as station_code,
+              c.charger_name, c.charger_type, c.power_kw as charger_max_power,
+              v.registration_number, v.model as vehicle_model
        FROM charging_sessions cs
+       JOIN stations s ON cs.station_id = s.id
        LEFT JOIN users u ON cs.user_id = u.id
-       LEFT JOIN stations s ON cs.station_id = s.id
        LEFT JOIN chargers c ON cs.charger_id = c.id
        LEFT JOIN vehicles v ON cs.vehicle_id = v.id
-       ORDER BY cs.id DESC`
+       ${whereSql}
+       ORDER BY cs.id DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
     );
 
-    const formatted = sessions.map((cs) => ({
-      id: cs.id,
-      sessionId: cs.session_id || `SES${String(cs.id).padStart(6, "0")}`,
-      customerName: cs.customer_name || "EV Driver",
-      customerEmail: cs.customer_email,
-      vehicleNumber: cs.registration_number || "TN01EV0001",
-      stationName: cs.station_name || "EV Power Hub",
-      chargerName: cs.charger_name || "Bay 01",
-      startTime: cs.start_time,
-      endTime: cs.end_time,
-      energyUsed: parseFloat(cs.energy_kwh) || 18.5,
-      powerKw: parseFloat(cs.power_kw) || 50.0,
-      batterySoc: parseInt(cs.battery_soc, 10) || 65,
-      totalAmount: parseFloat(cs.total_amount) || 350.0,
-      status: cs.session_status || "CHARGING",
-    }));
-
-    res.json({ success: true, count: formatted.length, data: formatted });
+    res.json({
+      success: true,
+      count: sessions.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      data: sessions,
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error fetching sessions", error: error.message });
+    res.status(500).json({ success: false, message: "Error fetching charging sessions", error: error.message });
   }
 };
 
 /**
- * 10. MAINTENANCE MANAGEMENT
- * GET /api/admin/maintenance
- */
-export const getMaintenanceAdmin = async (req, res) => {
-  try {
-    const tickets = await query(
-      `SELECT mt.*, s.station_name, c.charger_name, u.name as technician_name, u.phone as technician_phone
-       FROM maintenance_tickets mt
-       LEFT JOIN stations s ON mt.station_id = s.id
-       LEFT JOIN chargers c ON mt.charger_id = c.id
-       LEFT JOIN users u ON mt.technician_id = u.id
-       ORDER BY mt.id DESC`
-    );
-
-    const formatted = tickets.map((t) => ({
-      id: t.id,
-      ticketId: t.ticket_id || `WO${String(t.id).padStart(6, "0")}`,
-      workOrderId: t.ticket_id || `WO${String(t.id).padStart(6, "0")}`,
-      stationId: t.station_id,
-      stationName: t.station_name || "EV Power Hub",
-      chargerName: t.charger_name || "Bay 01",
-      technicianName: t.technician_name || "Unassigned",
-      technicianPhone: t.technician_phone,
-      issueType: t.issue_type,
-      description: t.description,
-      priority: t.priority || "MEDIUM",
-      status: t.status || "OPEN",
-      openedAt: t.opened_at || t.created_at,
-      resolutionNotes: t.resolution_notes,
-    }));
-
-    res.json({ success: true, count: formatted.length, data: formatted });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error fetching maintenance", error: error.message });
-  }
-};
-
-export const createMaintenanceAdmin = async (req, res) => {
-  try {
-    const { stationId, chargerId, technicianId, issueType, description, priority = "MEDIUM", status = "OPEN" } = req.body;
-    const [maxRow] = await query("SELECT COALESCE(MAX(id), 0) as maxId FROM maintenance_tickets");
-    const nextId = (maxRow?.maxId || 0) + 1;
-    const ticket_id = `WO${String(nextId).padStart(6, "0")}`;
-
-    await query(
-      `INSERT INTO maintenance_tickets (ticket_id, station_id, charger_id, technician_id, issue_type, description, priority, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [ticket_id, parseInt(stationId, 10) || 1, chargerId ? parseInt(chargerId, 10) : null, technicianId ? parseInt(technicianId, 10) : null, issueType || "General Checkup", description || "Scheduled Maintenance", priority, status]
-    );
-
-    res.status(201).json({ success: true, message: `Work Order ${ticket_id} created successfully!`, ticket_id });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error creating maintenance", error: error.message });
-  }
-};
-
-export const updateMaintenanceAdmin = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, priority, resolutionNotes } = req.body;
-    const isNum = /^\d+$/.test(id);
-
-    await query(
-      `UPDATE maintenance_tickets SET 
-         status = COALESCE(?, status),
-         priority = COALESCE(?, priority),
-         resolution_notes = COALESCE(?, resolution_notes)
-       WHERE id = ? OR ticket_id = ?`,
-      [status || null, priority || null, resolutionNotes || null, isNum ? parseInt(id, 10) : 0, id]
-    );
-
-    res.json({ success: true, message: "Maintenance record updated." });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error updating maintenance", error: error.message });
-  }
-};
-
-export const deleteMaintenanceAdmin = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const isNum = /^\d+$/.test(id);
-    await query("DELETE FROM maintenance_tickets WHERE id = ? OR ticket_id = ?", [
-      isNum ? parseInt(id, 10) : 0,
-      id,
-    ]);
-    res.json({ success: true, message: "Work order deleted successfully." });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error deleting maintenance", error: error.message });
-  }
-};
-
-/**
- * 11. AUDIT LOGS
- * GET /api/admin/audit-logs
+ * 12. SECURITY AND AUDIT CENTER (E. Security and Audit Center)
  */
 export const getAuditLogsAdmin = async (req, res) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
+    const { entityType, action, search, startDate, endDate } = req.query;
+
+    let whereSql = "WHERE 1=1";
+    const params = [];
+
+    if (entityType && entityType !== "ALL") {
+      whereSql += " AND al.entity_type = ?";
+      params.push(entityType.toUpperCase());
+    }
+
+    if (action && action !== "ALL") {
+      whereSql += " AND al.action LIKE ?";
+      params.push(`%${action.toUpperCase()}%`);
+    }
+
+    if (startDate) {
+      whereSql += " AND DATE(al.created_at) >= ?";
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      whereSql += " AND DATE(al.created_at) <= ?";
+      params.push(endDate);
+    }
+
+    if (search && search.trim()) {
+      const q = `%${search.trim().toLowerCase()}%`;
+      whereSql += " AND (LOWER(al.action) LIKE ? OR LOWER(al.entity_id) LIKE ? OR LOWER(u.name) LIKE ? OR LOWER(al.details) LIKE ?)";
+      params.push(q, q, q, q);
+    }
+
+    const [countRow] = await query(`SELECT COUNT(*) as total FROM audit_logs al LEFT JOIN users u ON al.user_id = u.id ${whereSql}`, params);
+    const total = countRow?.total || 0;
+
     const logs = await query(
-      `SELECT al.*, u.name as user_name, u.user_id as user_code, u.role
+      `SELECT al.*, u.name as user_name, u.email as user_email, u.role as actor_role
        FROM audit_logs al
        LEFT JOIN users u ON al.user_id = u.id
-       ORDER BY al.id DESC LIMIT 100`
+       ${whereSql}
+       ORDER BY al.id DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
     );
 
     const formatted = logs.map((l) => ({
       id: l.id,
-      auditId: `AUD${String(l.id).padStart(6, "0")}`,
-      adminId: l.user_code || `ADM${String(l.user_id || 1).padStart(6, "0")}`,
-      adminName: l.user_name || "System Admin",
+      userId: l.user_id,
+      userName: l.user_name || "System Automated",
+      userEmail: l.user_email || "system@voltcharge.internal",
+      role: l.user_role || l.actor_role || "ADMIN",
       action: l.action,
       entityType: l.entity_type,
       entityId: l.entity_id,
       oldValue: l.old_value,
       newValue: l.new_value,
-      timestamp: l.created_at,
+      details: l.details,
+      ipAddress: l.ip_address || "127.0.0.1",
+      createdAt: l.created_at,
     }));
 
-    res.json({ success: true, count: formatted.length, data: formatted });
+    res.json({
+      success: true,
+      count: formatted.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      data: formatted,
+      auditLogs: formatted,
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error fetching audit logs", error: error.message });
   }
 };
 
 /**
- * 12. REPORTS
- * GET /api/admin/reports
+ * 13. NETWORK ANALYTICS (F. Network Analytics)
  */
-export const getReports = async (req, res) => {
+export const getAnalyticsAdmin = async (req, res) => {
   try {
-    const [revSum] = await query("SELECT COALESCE(SUM(amount), 0) as totalRevenue FROM payments WHERE payment_status = 'SUCCESS'");
-    const [bookingsCount] = await query("SELECT COUNT(*) as totalBookings FROM bookings");
-    const [energySum] = await query("SELECT COALESCE(SUM(energy_kwh), 0) as totalEnergyKwh FROM charging_sessions");
-    const [maintCount] = await query("SELECT COUNT(*) as totalTickets FROM maintenance_tickets");
+    const { startDate, endDate } = req.query;
 
-    const recentTransactions = await query(
-      `SELECT p.*, u.name as customer_name, s.station_name 
-       FROM payments p
-       LEFT JOIN users u ON p.user_id = u.id
-       LEFT JOIN bookings b ON (p.booking_id = b.id OR p.booking_id = b.booking_id)
-       LEFT JOIN stations s ON b.station_id = s.id
-       WHERE p.payment_status = 'SUCCESS'
-       ORDER BY p.id DESC LIMIT 20`
+    let dateWhere = "";
+    const params = [];
+    if (startDate && endDate) {
+      dateWhere = "WHERE DATE(COALESCE(paid_at, created_at)) BETWEEN ? AND ?";
+      params.push(startDate, endDate);
+    }
+
+    // Revenue by month
+    const revenueByMonth = await query(
+      `SELECT DATE_FORMAT(COALESCE(paid_at, created_at), '%b %Y') as period,
+              COUNT(id) as totalTransactions,
+              COALESCE(SUM(amount), 0) as revenue
+       FROM payments 
+       WHERE payment_status = 'SUCCESS'
+       GROUP BY DATE_FORMAT(COALESCE(paid_at, created_at), '%b %Y'), YEAR(COALESCE(paid_at, created_at)), MONTH(COALESCE(paid_at, created_at))
+       ORDER BY YEAR(COALESCE(paid_at, created_at)) ASC, MONTH(COALESCE(paid_at, created_at)) ASC
+       LIMIT 12`
     );
 
-    res.json({
-      success: true,
-      data: {
-        totalRevenue: parseFloat(revSum?.totalRevenue) || 0,
-        totalBookings: bookingsCount?.totalBookings || 0,
-        totalEnergyKwh: parseFloat(energySum?.totalEnergyKwh) || 0,
-        totalMaintenanceTickets: maintCount?.totalTickets || 0,
-        recentTransactions,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error generating reports", error: error.message });
-  }
-};
-
-export const updateUserRole = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { role } = req.body;
-    await query("UPDATE users SET role = ? WHERE id = ? OR user_id = ?", [role.toUpperCase(), id, id]);
-    res.json({ success: true, message: `User role updated to ${role}.` });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error updating user role", error: error.message });
-  }
-};
-
-/**
- * Dynamic EV Charging Slot Optimization Analytics
- * GET /api/admin/slot-analytics
- */
-export const getDynamicSlotAnalytics = async (req, res) => {
-  try {
-    // 1. Fetch completed charging sessions with booking and station join
-    const sessions = await query(
-      `SELECT cs.id as session_id, cs.booking_id, cs.energy_kwh, cs.duration_minutes as actual_duration,
-              cs.start_time, cs.end_time, cs.charger_id, cs.station_id,
-              b.estimated_charging_time, b.estimated_charging_minutes, b.recommended_duration_minutes,
-              b.buffer_minutes, b.reserved_duration_minutes, b.duration_minutes as booked_duration,
-              b.energy_required_kwh,
-              s.station_name, c.charger_name, c.power_kw, c.charger_type
-       FROM charging_sessions cs
-       LEFT JOIN bookings b ON cs.booking_id = b.id
-       LEFT JOIN stations s ON cs.station_id = s.id
-       LEFT JOIN chargers c ON cs.charger_id = c.id
-       WHERE cs.session_status = 'COMPLETED'
-       ORDER BY cs.id DESC LIMIT 100`
+    // Energy delivered by month from sessions
+    const energyByMonth = await query(
+      `SELECT DATE_FORMAT(created_at, '%b %Y') as period,
+              COUNT(id) as totalSessions,
+              COALESCE(SUM(energy_kwh), 0) as totalEnergyKwh
+       FROM charging_sessions
+       WHERE session_status = 'COMPLETED'
+       GROUP BY DATE_FORMAT(created_at, '%b %Y'), YEAR(created_at), MONTH(created_at)
+       ORDER BY YEAR(created_at) ASC, MONTH(created_at) ASC
+       LIMIT 12`
     );
 
-    let totalEstimatedMins = 0;
-    let totalActualMins = 0;
-    let totalEarlyMins = 0;
-    let totalDelayMins = 0;
-    let earlyCount = 0;
-    let delayCount = 0;
-    let onTimeCount = 0;
-
-    const sessionComparisons = sessions.map((s) => {
-      const estimatedMins = s.estimated_charging_minutes || (s.estimated_charging_time ? parseInt(s.estimated_charging_time, 10) : (s.booked_duration || 20));
-      const actualMins = s.actual_duration || 15;
-      const reservedMins = s.reserved_duration_minutes || s.booked_duration || 20;
-      const diff = actualMins - estimatedMins; // < 0 early, > 0 delay
-
-      totalEstimatedMins += estimatedMins;
-      totalActualMins += actualMins;
-
-      if (diff < 0) {
-        totalEarlyMins += Math.abs(diff);
-        earlyCount++;
-      } else if (diff > 0) {
-        totalDelayMins += diff;
-        delayCount++;
-      } else {
-        onTimeCount++;
-      }
-
-      return {
-        sessionId: s.session_id,
-        bookingId: s.booking_id ? `EV${String(s.booking_id).padStart(4, "0")}` : `SES${s.session_id}`,
-        stationName: s.station_name || "Central EV Hub",
-        chargerName: s.charger_name || "DC Fast Charger",
-        chargerPower: s.power_kw || 150,
-        estimatedMinutes: estimatedMins,
-        recommendedMinutes: s.recommended_duration_minutes || Math.ceil(estimatedMins / 5) * 5,
-        safetyBufferMinutes: s.buffer_minutes || 5,
-        reservedMinutes: reservedMins,
-        actualMinutes: actualMins,
-        differenceMinutes: diff,
-        energyKwh: parseFloat(s.energy_kwh) || 0,
-        status: diff < 0 ? "Early Completion" : (diff > 0 ? "Slight Delay" : "Exact On-Time"),
-        savedMinutes: diff < 0 ? Math.abs(diff) : 0,
-      };
-    });
-
-    const count = sessions.length || 1;
-    const avgEstimatedTime = Math.round((totalEstimatedMins / count) * 10) / 10;
-    const avgActualTime = Math.round((totalActualMins / count) * 10) / 10;
-    const avgEarlyCompletion = earlyCount > 0 ? Math.round((totalEarlyMins / earlyCount) * 10) / 10 : 4.5;
-    const avgDelay = delayCount > 0 ? Math.round((totalDelayMins / delayCount) * 10) / 10 : 2.1;
-
-    // Charger Utilization Metrics
-    const [chargerStats] = await query(
-      `SELECT COUNT(*) as totalChargers,
-              SUM(CASE WHEN status IN ('CHARGING', 'OCCUPIED') THEN 1 ELSE 0 END) as activeChargers,
-              SUM(CASE WHEN status = 'AVAILABLE' THEN 1 ELSE 0 END) as availableChargers,
-              SUM(CASE WHEN status IN ('FAULTED', 'MAINTENANCE') THEN 1 ELSE 0 END) as maintChargers
+    // Charger status distribution
+    const [statusCounts] = await query(
+      `SELECT 
+         COUNT(*) as total,
+         COALESCE(SUM(CASE WHEN status = 'AVAILABLE' THEN 1 ELSE 0 END), 0) as available,
+         COALESCE(SUM(CASE WHEN status = 'CHARGING' THEN 1 ELSE 0 END), 0) as charging,
+         COALESCE(SUM(CASE WHEN status = 'RESERVED' THEN 1 ELSE 0 END), 0) as reserved,
+         COALESCE(SUM(CASE WHEN status IN ('FAULTED', 'MAINTENANCE') THEN 1 ELSE 0 END), 0) as faulted,
+         COALESCE(SUM(CASE WHEN status = 'OFFLINE' THEN 1 ELSE 0 END), 0) as offline
        FROM chargers`
     );
 
-    const totalC = chargerStats?.totalChargers || 6;
-    const activeC = chargerStats?.activeChargers || 2;
-    const chargerUtilizationPercent = totalC > 0 ? Math.round((activeC / totalC) * 100) : 65;
-
-    // Station utilization breakdown
-    const stationUtilRows = await query(
+    // Top utilized stations
+    const topStations = await query(
       `SELECT s.id, s.station_name, s.city,
-              COUNT(c.id) as totalChargers,
-              SUM(CASE WHEN c.status IN ('CHARGING', 'OCCUPIED') THEN 1 ELSE 0 END) as activeChargers,
-              ROUND((SUM(CASE WHEN c.status IN ('CHARGING', 'OCCUPIED') THEN 1 ELSE 0 END) / COUNT(c.id)) * 100, 1) as utilizationRate
+              COUNT(b.id) as totalBookings,
+              COALESCE(SUM(p.amount), 0) as totalRevenue,
+              COALESCE(SUM(cs.energy_kwh), 0) as totalEnergy
        FROM stations s
-       LEFT JOIN chargers c ON s.id = c.station_id
-       GROUP BY s.id, s.station_name, s.city`
+       LEFT JOIN bookings b ON s.id = b.station_id
+       LEFT JOIN payments p ON (b.id = p.booking_id AND p.payment_status = 'SUCCESS')
+       LEFT JOIN charging_sessions cs ON (b.id = cs.booking_id AND cs.session_status = 'COMPLETED')
+       GROUP BY s.id
+       ORDER BY totalRevenue DESC
+       LIMIT 5`
     );
-
-    // Peak Charging Periods (computed by hour)
-    const peakHours = [
-      { hour: "08:00 - 10:00", sessionCount: 14, label: "Morning Peak" },
-      { hour: "12:00 - 14:00", sessionCount: 19, label: "Afternoon Rush" },
-      { hour: "17:00 - 20:00", sessionCount: 28, label: "Evening Peak" },
-      { hour: "21:00 - 23:00", sessionCount: 8, label: "Night Off-Peak" },
-    ];
 
     res.json({
       success: true,
-      data: {
-        totalSessionsAnalyzed: sessions.length,
-        avgEstimatedTimeMinutes: avgEstimatedTime || 14.5,
-        avgActualTimeMinutes: avgActualTime || 13.8,
-        avgEarlyCompletionMinutes: avgEarlyCompletion || 3.8,
-        avgDelayMinutes: avgDelay || 1.8,
-        earlyCompletionPercentage: Math.round((earlyCount / count) * 100) || 68,
-        chargerUtilizationPercent: chargerUtilizationPercent || 72,
-        averageIdleTimeBetweenSessionsMinutes: 8.5,
-        efficiencyOptimizationSavingsHours: Math.round((totalEarlyMins / 60) * 10) / 10 || 12.4,
-        peakChargingPeriods: peakHours,
-        stationUtilization: stationUtilRows || [],
-        sessionComparisons: sessionComparisons.slice(0, 15),
-      },
+      revenueByMonth,
+      energyByMonth,
+      chargerDistribution: statusCounts,
+      topStations,
     });
   } catch (error) {
-    console.error("Dynamic Slot Analytics Error:", error);
+    res.status(500).json({ success: false, message: "Error generating network analytics", error: error.message });
+  }
+};
+
+export const getReports = getAnalyticsAdmin;
+
+export const getDynamicSlotAnalytics = async (req, res) => {
+  try {
+    const stats = await query(
+      `SELECT s.id, s.station_name, s.max_power, s.total_slots,
+              (SELECT COUNT(*) FROM bookings b WHERE b.station_id = s.id AND b.booking_status = 'CONFIRMED') as confirmed_bookings,
+              (SELECT COUNT(*) FROM chargers c WHERE c.station_id = s.id AND c.status = 'AVAILABLE') as available_chargers
+       FROM stations s`
+    );
+    res.json({ success: true, data: stats });
+  } catch (error) {
     res.status(500).json({ success: false, message: "Error fetching slot analytics", error: error.message });
   }
 };
@@ -1871,25 +2747,44 @@ export default {
   createCustomer,
   updateCustomer,
   deleteCustomer,
+  updateUserRole,
   getAllOwners,
-  createOwner,
-  updateOwner,
-  deleteOwner,
   getPendingOwners,
   approveOwner,
   rejectOwner,
+  suspendOwner,
+  reactivateOwner,
+  createOwner,
+  updateOwner,
+  deleteOwner,
   getAllTechnicians,
   createTechnician,
   updateTechnician,
   deleteTechnician,
   getStationsAdmin,
-  createStationAdmin,
-  updateStationAdmin,
-  deleteStationAdmin,
   getPendingStations,
+  getStationPhotosAdmin,
   approveStation,
   rejectStation,
   suspendStation,
+  reactivateStation,
+  createStationAdmin,
+  updateStationAdmin,
+  deleteStationAdmin,
+  getNetworkLiveMonitor,
+  sendRemoteChargerCommand,
+  getMaintenanceAdmin,
+  getIncidentsAdmin,
+  createMaintenanceAdmin,
+  createIncidentAdmin,
+  updateMaintenanceAdmin,
+  updateIncidentAdmin,
+  deleteMaintenanceAdmin,
+  deleteIncidentAdmin,
+  getPaymentsAdmin,
+  getPaymentsReconciliation,
+  refundPaymentAdmin,
+  updatePaymentAdmin,
   getChargersAdmin,
   createChargerAdmin,
   updateChargerAdmin,
@@ -1898,15 +2793,10 @@ export default {
   createBookingAdmin,
   updateBookingAdmin,
   deleteBookingAdmin,
-  getPaymentsAdmin,
-  updatePaymentAdmin,
   getSessionsAdmin,
-  getMaintenanceAdmin,
-  createMaintenanceAdmin,
-  updateMaintenanceAdmin,
   getAuditLogsAdmin,
+  getAnalyticsAdmin,
   getReports,
-  updateUserRole,
   getDynamicSlotAnalytics,
   getPendingNetworks,
   approveNetwork,

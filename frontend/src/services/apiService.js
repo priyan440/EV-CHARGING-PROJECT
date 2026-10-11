@@ -2,22 +2,32 @@ import api from "./api";
 import axios from "axios";
 
 export const apiService = {
-  // Health
+  // Health (Authoritative backend status check)
   checkHealth: async () => {
     try {
       const res = await api.get("/health");
-      return res.data;
-    } catch {
       return {
-        status: "TEST_MODE_STANDALONE",
-        message: "Operating in Standalone Test Mode Engine",
+        ...res.data,
+        isOnline: res.data?.status === "OK" || res.data?.success === true,
+      };
+    } catch (err) {
+      return {
+        status: "OFFLINE",
+        success: false,
+        isOnline: false,
+        message: err.response?.data?.message || err.message || "Backend server unreachable",
+        database: "disconnected",
+        timestamp: new Date().toISOString(),
         services: {
-          backendApi: "STANDALONE_MODE",
-          database: "LOCAL_STORAGE",
-          razorpayGateway: "TEST_MODE_ACTIVE",
-          notificationProvider: "SIMULATED",
-          webSocketServer: "STANDBY",
+          backendApi: "OFFLINE",
+          database: "OFFLINE",
+          mysql: "OFFLINE",
+          razorpayGateway: "UNAVAILABLE",
+          notificationProvider: "UNAVAILABLE",
+          webSocketServer: "OFFLINE",
+          ocppEngine: "OFFLINE",
         },
+        error: err.message,
       };
     }
   },

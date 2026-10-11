@@ -11,6 +11,7 @@ import {
   emitStationUpdated,
 } from "../services/socketService.js";
 import { formatBooking } from "./bookingController.js";
+import { parsePagination, buildPaginationMeta } from "../utils/pagination.js";
 
 // Helper: Check if authenticated user is ADMIN
 const isAdmin = (req) => {
@@ -20,6 +21,17 @@ const isAdmin = (req) => {
 // Helper: Extract owner user ID from authenticated request
 const getOwnerId = (req) => {
   return req.user?.id || 0;
+};
+
+// Helper: Verify owner is active and not suspended
+const checkOwnerActive = async (req) => {
+  if (isAdmin(req)) return { allowed: true };
+  const ownerId = getOwnerId(req);
+  const rows = await query("SELECT status FROM users WHERE id = ?", [ownerId]);
+  if (rows.length === 0 || rows[0].status === "SUSPENDED" || rows[0].status === "INACTIVE") {
+    return { allowed: false, status: rows[0]?.status || "SUSPENDED" };
+  }
+  return { allowed: true };
 };
 
 // Helper: Generate next sequential ID safely from MySQL table
@@ -293,7 +305,13 @@ export const getOwnerStations = async (req, res) => {
 
 export const createOwnerStation = async (req, res) => {
   try {
+    const activeCheck = await checkOwnerActive(req);
+    if (!activeCheck.allowed) {
+      return res.status(403).json({ success: false, message: "Account is suspended or inactive. Station creation is prohibited." });
+    }
+
     const ownerId = getOwnerId(req);
+    const admin = isAdmin(req);
     const {
       stationName,
       name,
@@ -322,13 +340,17 @@ export const createOwnerStation = async (req, res) => {
     const cleanContact = contactNumber || "+91 9876543210";
     const amenitiesJson = typeof amenities === "string" ? amenities : JSON.stringify(amenities);
 
+    // If created by Admin -> APPROVED, if created by Station Owner -> PENDING review
+    const initialApproval = admin ? "APPROVED" : "PENDING";
+    const initialStatus = admin ? "ACTIVE" : "PENDING";
+
     let insertedStationId = null;
 
     await transaction(async (connection) => {
       // 1. Insert station
       const [stationResult] = await connection.execute(
         `INSERT INTO stations (station_id, owner_id, station_name, address, city, state, pincode, latitude, longitude, opening_time, closing_time, contact_number, total_slots, available_slots, max_power, status, approval_status, amenities)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 'APPROVED', ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           station_id,
           ownerId,
@@ -345,6 +367,8 @@ export const createOwnerStation = async (req, res) => {
           cleanSlots,
           cleanSlots,
           cleanPower,
+          initialStatus,
+          initialApproval,
           amenitiesJson,
         ]
       );
@@ -663,30 +687,110 @@ export const deleteOwnerCharger = async (req, res) => {
 export const setChargerSimulatorControl = async (req, res) => {
   try {
     const { chargerId } = req.params;
-    const { state, status, voltage = 400.0, current = 80.0, power = 32.0 } = req.body;
-    const targetStatus = status || state || "CHARGING";
+    const { state, status, voltage = 400.0, current = 80.0, power = 32.0, batterySoc = 45 } = req.body;
+    const targetStatus = (status || state || "CHARGING").toUpperCase();
 
-    await query(`UPDATE chargers SET status = ? WHERE charger_id = ? OR id = ?`, [
-      targetStatus,
-      chargerId,
-      parseInt(chargerId, 10) || 0,
-    ]);
+    const isNum = /^\d+$/.test(chargerId);
+    const chargers = await query("SELECT * FROM chargers WHERE charger_id = ? OR id = ?", [chargerId, isNum ? parseInt(chargerId, 10) : 0]);
+    if (chargers.length === 0) return res.status(404).json({ success: false, message: "Charger not found." });
+    const target = chargers[0];
 
-    const rows = await query(`SELECT * FROM chargers WHERE charger_id = ? OR id = ?`, [chargerId, parseInt(chargerId, 10) || 0]);
-    const updated = rows[0];
-    if (updated) {
-      emitChargerStatusChanged(updated);
-      emitTelemetryUpdated({ chargerId: updated.charger_id, voltage, current, power, status: targetStatus });
-    }
+    await query(
+      `UPDATE chargers SET status = ?, is_simulated = 1, last_heartbeat = NOW() WHERE id = ?`,
+      [targetStatus, target.id]
+    );
+    await query(
+      `UPDATE charger_connectors SET status = ? WHERE charger_id = ?`,
+      [targetStatus, target.id]
+    );
 
-    res.json({ success: true, message: `Charger simulator set to ${targetStatus}`, data: updated });
+    const updated = {
+      ...target,
+      status: targetStatus,
+      is_simulated: 1,
+      isSimulated: true,
+      last_heartbeat: new Date().toISOString(),
+    };
+
+    emitChargerStatusChanged(updated);
+    emitTelemetryUpdated({
+      chargerId: target.charger_id,
+      id: target.id,
+      stationId: target.station_id,
+      voltage: parseFloat(voltage) || 400.0,
+      current: parseFloat(current) || 80.0,
+      power: parseFloat(power) || 32.0,
+      batterySoc: parseInt(batterySoc, 10) || 45,
+      status: targetStatus,
+      isSimulated: true,
+      timestamp: new Date().toISOString(),
+    });
+
+    res.json({
+      success: true,
+      message: `Charger simulator set to ${targetStatus} (Simulated)`,
+      data: updated,
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: "Failed to set simulator state", error: error.message });
   }
 };
 
 export const setChargerSimulateStatus = setChargerSimulatorControl;
-export const updateChargerHeartbeat = async (req, res) => res.json({ success: true, message: "Heartbeat acknowledged" });
+
+export const updateChargerHeartbeat = async (req, res) => {
+  try {
+    const { chargerId, charger_id, id, status, telemetry } = req.body;
+    const targetId = chargerId || charger_id || id || req.params?.chargerId;
+
+    if (!targetId) {
+      return res.json({ success: true, message: "Heartbeat acknowledged (broadcast)" });
+    }
+
+    const isNum = /^\d+$/.test(targetId);
+    const chargers = await query("SELECT * FROM chargers WHERE charger_id = ? OR id = ?", [targetId, isNum ? parseInt(targetId, 10) : 0]);
+    if (chargers.length === 0) {
+      return res.json({ success: true, message: "Heartbeat acknowledged" });
+    }
+    const target = chargers[0];
+
+    const currentStatus = status ? status.toUpperCase() : (target.status === "OFFLINE" ? "AVAILABLE" : target.status);
+
+    await query(
+      `UPDATE chargers SET last_heartbeat = NOW(), is_online = 1, status = ? WHERE id = ?`,
+      [currentStatus, target.id]
+    );
+
+    const payload = {
+      id: target.id,
+      chargerId: target.charger_id,
+      stationId: target.station_id,
+      status: currentStatus,
+      isOnline: true,
+      lastHeartbeat: new Date().toISOString(),
+    };
+
+    emitChargerStatusChanged(payload);
+
+    if (telemetry) {
+      emitTelemetryUpdated({
+        chargerId: target.charger_id,
+        id: target.id,
+        stationId: target.station_id,
+        ...telemetry,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Heartbeat acknowledged & persisted to MySQL",
+      data: payload,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error updating heartbeat", error: error.message });
+  }
+};
 
 /**
  * 4. BOOKINGS MANAGEMENT
@@ -1454,8 +1558,52 @@ export const updateMaintenanceTicket = async (req, res) => {
   }
 };
 
-export const getOwnerFaults = async (req, res) => res.json({ success: true, data: [] });
-export const resolveOwnerFault = async (req, res) => res.json({ success: true, message: "Fault resolved" });
+export const getOwnerFaults = async (req, res) => {
+  try {
+    const ownerId = getOwnerId(req);
+    const admin = isAdmin(req);
+
+    const faults = await query(
+      `SELECT mt.*, s.station_name, s.station_id as station_code, c.charger_name, c.charger_id as charger_code, tech.name as technician_name
+       FROM maintenance_tickets mt
+       JOIN stations s ON mt.station_id = s.id
+       LEFT JOIN chargers c ON mt.charger_id = c.id
+       LEFT JOIN users tech ON mt.technician_id = tech.id
+       WHERE (mt.status IN ('OPEN', 'ASSIGNED', 'IN_PROGRESS')) ${admin ? "" : "AND s.owner_id = ?"}
+       ORDER BY mt.id DESC`,
+      admin ? [] : [ownerId]
+    );
+
+    res.json({ success: true, count: faults.length, data: faults, faults });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error fetching faults", error: error.message });
+  }
+};
+
+export const resolveOwnerFault = async (req, res) => {
+  try {
+    const { faultId } = req.params;
+    const { resolutionNotes = "Resolved by station owner" } = req.body;
+    const isNum = /^\d+$/.test(faultId);
+
+    const tickets = await query("SELECT * FROM maintenance_tickets WHERE id = ? OR ticket_id = ?", [isNum ? parseInt(faultId, 10) : 0, faultId]);
+    if (tickets.length === 0) return res.status(404).json({ success: false, message: "Fault record not found." });
+    const ticket = tickets[0];
+
+    await query("UPDATE maintenance_tickets SET status = 'RESOLVED', resolution_notes = ?, resolved_at = NOW() WHERE id = ?", [resolutionNotes, ticket.id]);
+
+    if (ticket.charger_id) {
+      await query("UPDATE chargers SET status = 'AVAILABLE', error_code = NULL, error_message = NULL WHERE id = ?", [ticket.charger_id]);
+      emitChargerStatusChanged({ id: ticket.charger_id, status: "AVAILABLE" });
+    }
+
+    emitMaintenanceUpdated({ ticketId: ticket.ticket_id, status: "RESOLVED" });
+
+    res.json({ success: true, message: `Fault ${ticket.ticket_id} marked as RESOLVED.` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error resolving fault", error: error.message });
+  }
+};
 
 export const getOwnerTechnicians = async (req, res) => {
   try {
@@ -1546,9 +1694,118 @@ export const updateOwnerSettings = async (req, res) => {
   }
 };
 
-export const getStationLoadProfile = async (req, res) => res.json({ success: true, data: [] });
-export const updateSmartLoadCapacity = async (req, res) => res.json({ success: true, message: "Power capacity updated" });
-export const getOwnerAnalytics = async (req, res) => res.json({ success: true, data: {} });
+export const getStationLoadProfile = async (req, res) => {
+  try {
+    const { stationId } = req.params;
+    const isNum = /^\d+$/.test(stationId);
+
+    const stations = await query("SELECT * FROM stations WHERE id = ? OR station_id = ?", [isNum ? parseInt(stationId, 10) : 0, stationId]);
+    if (stations.length === 0) return res.status(404).json({ success: false, message: "Station not found." });
+    const station = stations[0];
+
+    const [cfg] = await query("SELECT * FROM station_energy_configs WHERE station_id = ?", [station.id]);
+    const maxCapacity = parseFloat(cfg?.site_power_limit_kw || station.max_power) || 250.0;
+    const buildingLoad = parseFloat(cfg?.other_building_load_kw) || 30.0;
+    const safetyReserve = parseFloat(cfg?.safety_reserve_kw) || 20.0;
+    const availableForCharging = Math.max(0, maxCapacity - buildingLoad - safetyReserve);
+
+    const activeSessions = await query(
+      "SELECT COALESCE(SUM(power_kw), 0) as currentEvLoad, COUNT(id) as activeCount FROM charging_sessions WHERE station_id = ? AND session_status IN ('CHARGING', 'STARTED', 'ACTIVE')",
+      [station.id]
+    );
+    const currentEvLoad = parseFloat(activeSessions[0]?.currentEvLoad) || 0.0;
+
+    res.json({
+      success: true,
+      data: {
+        stationId: station.id,
+        stationName: station.station_name,
+        maxCapacityKw: maxCapacity,
+        buildingLoadKw: buildingLoad,
+        safetyReserveKw: safetyReserve,
+        availableForChargingKw: availableForCharging,
+        currentEvLoadKw: currentEvLoad,
+        totalSiteLoadKw: buildingLoad + currentEvLoad,
+        utilizationPct: Math.round(((buildingLoad + currentEvLoad) / maxCapacity) * 100),
+        activeChargingCount: activeSessions[0]?.activeCount || 0,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error fetching station load profile", error: error.message });
+  }
+};
+
+export const updateSmartLoadCapacity = async (req, res) => {
+  try {
+    const { stationId } = req.params;
+    const { sitePowerLimitKw, controlMode = "MONITOR", otherBuildingLoadKw = 30.0 } = req.body;
+    const isNum = /^\d+$/.test(stationId);
+
+    const stations = await query("SELECT id FROM stations WHERE id = ? OR station_id = ?", [isNum ? parseInt(stationId, 10) : 0, stationId]);
+    if (stations.length === 0) return res.status(404).json({ success: false, message: "Station not found." });
+    const stId = stations[0].id;
+
+    await query(
+      `INSERT INTO station_energy_configs (station_id, site_power_limit_kw, other_building_load_kw, control_mode)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE 
+         site_power_limit_kw = VALUES(site_power_limit_kw),
+         other_building_load_kw = VALUES(other_building_load_kw),
+         control_mode = VALUES(control_mode)`,
+      [stId, parseFloat(sitePowerLimitKw) || 250.0, parseFloat(otherBuildingLoadKw) || 30.0, controlMode]
+    );
+
+    res.json({ success: true, message: "Power capacity and smart load configuration updated." });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error updating load capacity", error: error.message });
+  }
+};
+
+export const getOwnerAnalytics = async (req, res) => {
+  try {
+    const ownerId = getOwnerId(req);
+    const admin = isAdmin(req);
+
+    const [revRow] = await query(
+      `SELECT COALESCE(SUM(p.amount), 0) as totalRevenue, COUNT(p.id) as totalTransactions
+       FROM payments p
+       JOIN bookings b ON (p.booking_id = b.id OR p.booking_id = b.booking_id)
+       JOIN stations s ON b.station_id = s.id
+       WHERE p.payment_status = 'SUCCESS' ${admin ? "" : "AND s.owner_id = ?"}`,
+      admin ? [] : [ownerId]
+    );
+
+    const [energyRow] = await query(
+      `SELECT COALESCE(SUM(cs.energy_kwh), 0) as totalEnergyKwh, COUNT(cs.id) as totalSessions
+       FROM charging_sessions cs
+       JOIN stations s ON cs.station_id = s.id
+       WHERE cs.session_status = 'COMPLETED' ${admin ? "" : "AND s.owner_id = ?"}`,
+      admin ? [] : [ownerId]
+    );
+
+    const chargerStats = await query(
+      `SELECT c.status, COUNT(c.id) as count
+       FROM chargers c
+       JOIN stations s ON c.station_id = s.id
+       ${admin ? "" : "WHERE s.owner_id = ?"}
+       GROUP BY c.status`,
+      admin ? [] : [ownerId]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        totalRevenue: parseFloat(revRow?.totalRevenue) || 0,
+        totalTransactions: revRow?.totalTransactions || 0,
+        totalEnergyKwh: parseFloat(energyRow?.totalEnergyKwh) || 0,
+        totalSessions: energyRow?.totalSessions || 0,
+        chargerBreakdown: chargerStats,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error fetching owner analytics", error: error.message });
+  }
+};
 
 /**
  * Real-time Station Control Center Snapshot
@@ -1582,8 +1839,8 @@ export const getOwnerControlCenterSnapshot = async (req, res) => {
     if (!selectedStation) {
       return res.json({
         success: true,
-        summary: { total: 0, available: 0, reserved: 0, protected: 0, charging: 0, occupied: 0, maintenance: 0 },
-        metrics: { totalChargers: 0, availableCount: 0, reservedCount: 0, protectedCount: 0, chargingCount: 0, occupiedCount: 0, maintenanceCount: 0, upcomingReservationsCount: 0, activeChargingCount: 0, offlineArrivalsToday: 0, conflictsDetectedToday: 0, noShowsToday: 0, queueWaitingCount: 0 },
+        summary: { total: 0, available: 0, reserved: 0, protected: 0, charging: 0, occupied: 0, maintenance: 0, offline: 0 },
+        metrics: { totalChargers: 0, availableCount: 0, reservedCount: 0, protectedCount: 0, chargingCount: 0, occupiedCount: 0, maintenanceCount: 0, offlineCount: 0, upcomingReservationsCount: 0, activeChargingCount: 0, offlineArrivalsToday: 0, conflictsDetectedToday: 0, noShowsToday: 0, queueWaitingCount: 0 },
         chargers: [],
         chargerGrid: [],
         bookings: [],
@@ -1636,6 +1893,7 @@ export const getOwnerControlCenterSnapshot = async (req, res) => {
     );
 
     // 5. Build charger grid with occupant and session details
+    const now = Date.now();
     const chargerGrid = chargers.map((c) => {
       const activeSession = rawSessions.find((s) => s.charger_id === c.id);
       const activeBooking = bookings.find(
@@ -1645,13 +1903,22 @@ export const getOwnerControlCenterSnapshot = async (req, res) => {
         (b) => (b.chargerId === c.id || b.charger_id === c.id) && b.bookingStatus === "CONFIRMED"
       );
 
+      const timeoutSec = c.heartbeat_timeout_seconds || 60;
+      const lastHbTime = c.last_heartbeat ? new Date(c.last_heartbeat).getTime() : 0;
+      const secondsSinceHb = lastHbTime > 0 ? Math.round((now - lastHbTime) / 1000) : 9999;
+      const online = secondsSinceHb <= timeoutSec || Boolean(c.is_simulated);
+
       let computedStatus = c.status || "AVAILABLE";
-      if (activeSession) {
+      if (c.status === "FAULTED" || c.status === "MAINTENANCE" || c.status === "UNAVAILABLE") {
+        computedStatus = c.status;
+      } else if (activeSession) {
         computedStatus = "CHARGING";
       } else if (activeBooking) {
         computedStatus = activeBooking.bookingStatus === "PROTECTED" ? "PROTECTED" : "CHARGING";
       } else if (upcomingBooking) {
         computedStatus = "RESERVED";
+      } else if (!online && !c.is_simulated) {
+        computedStatus = "OFFLINE";
       }
 
       const occupant = activeSession
@@ -1687,6 +1954,10 @@ export const getOwnerControlCenterSnapshot = async (req, res) => {
         powerKw: parseFloat(c.power_kw) || 60.0,
         power: parseFloat(c.power_kw) || 60.0,
         status: computedStatus,
+        isOnline: online,
+        isSimulated: Boolean(c.is_simulated),
+        lastHeartbeat: c.last_heartbeat,
+        secondsSinceHeartbeat: secondsSinceHb,
         connectorType: "CCS2",
         occupant,
         session: activeSession
@@ -1694,15 +1965,15 @@ export const getOwnerControlCenterSnapshot = async (req, res) => {
             sessionId: activeSession.session_id,
             currentSoc: activeSession.battery_soc || 65,
             targetSoc: 80,
-            energyKwh: activeSession.energy_kwh || 18.5,
-            powerKw: activeSession.power_kw || 50.0,
-            durationMinutes: activeSession.duration_minutes || 25,
+            energyKwh: parseFloat(activeSession.energy_kwh) || 0.0,
+            powerKw: parseFloat(activeSession.power_kw) || 50.0,
+            durationMinutes: activeSession.duration_minutes || 0,
           }
           : null,
         telemetry: {
-          voltage: 400.0,
-          current: 80.0,
-          power: computedStatus === "CHARGING" ? 50.0 : 0.0,
+          voltage: activeSession ? parseFloat(activeSession.voltage) || 400.0 : 400.0,
+          current: activeSession ? parseFloat(activeSession.current_amp) || 80.0 : 0.0,
+          power: activeSession ? parseFloat(activeSession.power_kw) || 50.0 : (computedStatus === "CHARGING" ? 50.0 : 0.0),
           status: computedStatus,
         },
       };
@@ -1716,6 +1987,7 @@ export const getOwnerControlCenterSnapshot = async (req, res) => {
     const charging = chargerGrid.filter((c) => c.status === "CHARGING").length;
     const occupied = chargerGrid.filter((c) => c.status === "OCCUPIED").length;
     const maintenance = chargerGrid.filter((c) => c.status === "MAINTENANCE" || c.status === "FAULTED").length;
+    const offline = chargerGrid.filter((c) => c.status === "OFFLINE" || !c.isOnline).length;
 
     const summary = {
       total,
@@ -1725,6 +1997,7 @@ export const getOwnerControlCenterSnapshot = async (req, res) => {
       charging,
       occupied,
       maintenance,
+      offline,
     };
 
     const metrics = {
@@ -1735,6 +2008,7 @@ export const getOwnerControlCenterSnapshot = async (req, res) => {
       chargingCount: charging,
       occupiedCount: occupied,
       maintenanceCount: maintenance,
+      offlineCount: offline,
       upcomingReservationsCount: reserved,
       activeChargingCount: charging,
       offlineArrivalsToday: 0,

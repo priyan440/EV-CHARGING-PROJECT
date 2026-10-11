@@ -96,8 +96,35 @@ class SocketService {
   }
 
   joinOwnerDashboard() {
+    if (!this.socket) this.connect();
     if (this.socket && this.socket.connected) {
       this.socket.emit("join_owner_dashboard");
+    } else if (this.socket) {
+      this.socket.once("connect", () => {
+        this.socket.emit("join_owner_dashboard");
+      });
+    }
+  }
+
+  joinAdminDashboard() {
+    if (!this.socket) this.connect();
+    if (this.socket && this.socket.connected) {
+      this.socket.emit("join_admin_dashboard");
+    } else if (this.socket) {
+      this.socket.once("connect", () => {
+        this.socket.emit("join_admin_dashboard");
+      });
+    }
+  }
+
+  joinAdmin() {
+    if (!this.socket) this.connect();
+    if (this.socket && this.socket.connected) {
+      this.socket.emit("join_admin");
+    } else if (this.socket) {
+      this.socket.once("connect", () => {
+        this.socket.emit("join_admin");
+      });
     }
   }
 

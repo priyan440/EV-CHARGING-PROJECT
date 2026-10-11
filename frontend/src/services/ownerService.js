@@ -228,6 +228,115 @@ export const updateOwnerSettings = async (settingsData) => {
   return res.data;
 };
 
+// 15. Station Photos Storage & Management
+export const getStationPhotos = async (stationId) => {
+  const res = await api.get(`/owner/stations/${stationId}/photos`);
+  return res.data?.data || [];
+};
+
+export const uploadStationPhotos = async (stationId, photosData) => {
+  const res = await api.post(`/owner/stations/${stationId}/photos`, photosData);
+  return res.data;
+};
+
+export const setPrimaryStationPhoto = async (stationId, photoId) => {
+  const res = await api.put(`/owner/stations/${stationId}/photos/${photoId}/primary`);
+  return res.data;
+};
+
+export const deleteStationPhoto = async (stationId, photoId) => {
+  const res = await api.delete(`/owner/stations/${stationId}/photos/${photoId}`);
+  return res.data;
+};
+
+// 16. Energy Cost and Smart Load Management
+export const getStationEnergyConfig = async (stationId) => {
+  const res = await api.get(`/owner/energy/stations/${stationId}/config`);
+  return res.data?.data || res.data;
+};
+
+export const updateStationEnergyConfig = async (stationId, configData) => {
+  const res = await api.put(`/owner/energy/stations/${stationId}/config`, configData);
+  return res.data;
+};
+
+export const getStationEnergyDashboard = async (stationId) => {
+  const res = await api.get(`/owner/energy/stations/${stationId}/dashboard`);
+  return res.data?.data || res.data;
+};
+
+export const smartAllocatePower = async (stationId) => {
+  const res = await api.post(`/owner/energy/stations/${stationId}/smart-allocate`);
+  return res.data;
+};
+
+export const recordEnergyTelemetry = async (stationId, telemetryData) => {
+  const res = await api.post(`/owner/energy/stations/${stationId}/telemetry`, telemetryData);
+  return res.data;
+};
+
+export const getStationEnergyHistory = async (stationId, params = {}) => {
+  const queryParams = new URLSearchParams(params).toString();
+  const res = await api.get(`/owner/energy/stations/${stationId}/history?${queryParams}`);
+  return res.data;
+};
+
+export const getEnergyCostReports = async (stationId, params = {}) => {
+  const queryParams = new URLSearchParams(params).toString();
+  const res = await api.get(`/owner/energy/stations/${stationId}/cost-reports?${queryParams}`);
+  return res.data;
+};
+
+// 17. Tariff History & Public Pricing Estimator
+export const getTariffHistory = async (stationId = "", params = {}) => {
+  let url = "/tariffs/history?";
+  if (stationId) url += `stationId=${encodeURIComponent(stationId)}&`;
+  url += new URLSearchParams(params).toString();
+  const res = await api.get(url);
+  return res.data;
+};
+
+export const calculateTariffEstimate = async (calcParams) => {
+  const res = await api.post("/tariffs/calculate", calcParams);
+  return res.data;
+};
+
+// 15. Station Profitability Advisor & Expenses
+export const getProfitabilitySummary = async (params = {}) => {
+  const res = await api.get("/owner/profitability/summary", { params });
+  return res.data;
+};
+
+export const getProfitabilityStations = async (params = {}) => {
+  const res = await api.get("/owner/profitability/stations", { params });
+  return res.data;
+};
+
+export const getProfitabilityTrends = async (params = {}) => {
+  const res = await api.get("/owner/profitability/trends", { params });
+  return res.data;
+};
+
+export const getStationExpenses = async (params = {}) => {
+  const res = await api.get("/owner/expenses", { params });
+  return res.data;
+};
+
+export const createStationExpense = async (data) => {
+  const res = await api.post("/owner/expenses", data);
+  return res.data;
+};
+
+export const updateStationExpense = async (id, data) => {
+  const res = await api.put(`/owner/expenses/${id}`, data);
+  return res.data;
+};
+
+export const deleteStationExpense = async (id) => {
+  const res = await api.delete(`/owner/expenses/${id}`);
+  return res.data;
+};
+
 export default {
   getDashboardSummary,
   getOwnerStations,

@@ -11,36 +11,36 @@ import ForgotPassword from "./pages/ForgotPassword";
 import Forbidden from "./pages/Forbidden";
 import NotFound from "./pages/NotFound";
 
-// Customer Pages
-import CustomerDashboard from "./pages/CustomerDashboard";
-import FindStations from "./pages/FindStations";
-import EVMapPage from "./pages/EVMapPage";
-import StationDetails from "./pages/StationDetails";
-import Booking from "./pages/Booking";
-import MyBookings from "./pages/MyBookings";
-import LiveCharging from "./pages/LiveCharging";
-import ChargingHistory from "./pages/ChargingHistory";
-import Payments from "./pages/Payments";
-import Vehicles from "./pages/Vehicles";
-import Reviews from "./pages/Reviews";
-import Complaints from "./pages/Complaints";
-import Profile from "./pages/Profile";
-import Settings from "./pages/Settings";
+// User / Customer Pages
+import CustomerDashboard from "./pages/user/CustomerDashboard";
+import FindStations from "./pages/user/FindStations";
+import EVMapPage from "./pages/user/EVMapPage";
+import StationDetails from "./pages/user/StationDetails";
+import Booking from "./pages/user/Booking";
+import MyBookings from "./pages/user/MyBookings";
+import LiveCharging from "./pages/user/LiveCharging";
+import ChargingHistory from "./pages/user/ChargingHistory";
+import Payments from "./pages/user/Payments";
+import Vehicles from "./pages/user/Vehicles";
+import Reviews from "./pages/user/Reviews";
+import Complaints from "./pages/user/Complaints";
+import Profile from "./pages/user/Profile";
+import Settings from "./pages/user/Settings";
 
-// New Multi-Page Dedicated Workflow Pages
-import AddVehicle from "./pages/AddVehicle";
-import VehicleDetails from "./pages/VehicleDetails";
-import SmartChargingEstimate from "./pages/SmartChargingEstimate";
-import SlotSelection from "./pages/SlotSelection";
-import BookingSummary from "./pages/BookingSummary";
-import PaymentPage from "./pages/PaymentPage";
-import BookingSuccess from "./pages/BookingSuccess";
-import PaymentFailed from "./pages/PaymentFailed";
-import BookingDetails from "./pages/BookingDetails";
-import LiveChargingSessionPage from "./pages/LiveChargingSessionPage";
-import HistoryAnalytics from "./pages/HistoryAnalytics";
-import BookSlot from "./pages/BookSlot";
-import BookingConfirmation from "./pages/BookingConfirmation";
+// New Multi-Page Dedicated Workflow Pages (User)
+import AddVehicle from "./pages/user/AddVehicle";
+import VehicleDetails from "./pages/user/VehicleDetails";
+import SmartChargingEstimate from "./pages/user/SmartChargingEstimate";
+import SlotSelection from "./pages/user/SlotSelection";
+import BookingSummary from "./pages/user/BookingSummary";
+import PaymentPage from "./pages/user/PaymentPage";
+import BookingSuccess from "./pages/user/BookingSuccess";
+import PaymentFailed from "./pages/user/PaymentFailed";
+import BookingDetails from "./pages/user/BookingDetails";
+import LiveChargingSessionPage from "./pages/user/LiveChargingSessionPage";
+import HistoryAnalytics from "./pages/user/HistoryAnalytics";
+import BookSlot from "./pages/user/BookSlot";
+import BookingConfirmation from "./pages/user/BookingConfirmation";
 
 // Station Owner Pages
 import OwnerDashboard from "./pages/owner/OwnerDashboard";
@@ -51,6 +51,7 @@ import OwnerSessions from "./pages/owner/OwnerSessions";
 import OwnerCustomers from "./pages/owner/OwnerCustomers";
 import OwnerTariffs from "./pages/owner/OwnerTariffs";
 import OwnerRevenue from "./pages/owner/OwnerRevenue";
+import OwnerProfitabilityAdvisor from "./pages/owner/OwnerProfitabilityAdvisor";
 import OwnerMaintenance from "./pages/owner/OwnerMaintenance";
 import OwnerSmartLoad from "./pages/owner/OwnerSmartLoad";
 import OwnerAnalytics from "./pages/owner/OwnerAnalytics";
@@ -75,25 +76,27 @@ import AdminBookings from "./pages/admin/AdminBookings";
 import AdminPricing from "./pages/admin/AdminPricing";
 import AdminRealtimeAnalytics from "./pages/admin/AdminRealtimeAnalytics";
 import AdminEmergencyRequests from "./pages/admin/AdminEmergencyRequests";
+import AdminIncidents from "./pages/admin/AdminIncidents";
+import AdminPaymentReconciliation from "./pages/admin/AdminPaymentReconciliation";
 
 // New EV Platform Scanner & Session Controllers
-import BookingVerify from "./pages/BookingVerify";
+import BookingVerify from "./pages/user/BookingVerify";
 import OwnerScanner from "./pages/owner/OwnerScanner";
 import LiveChargingSession from "./pages/owner/LiveChargingSession";
 
-// Innovative Features 11-16 Pages
+// Innovative Features Pages (Owner & User)
 import OwnerAIDashboard from "./pages/owner/OwnerAIDashboard";
 import OwnerDemandForecast from "./pages/owner/OwnerDemandForecast";
-import VehicleHealth from "./pages/VehicleHealth";
-import SecurityCenter from "./pages/SecurityCenter";
-import EmergencyAssistance from "./pages/EmergencyAssistance";
-import ChargingSimulator from "./pages/ChargingSimulator";
+import VehicleHealth from "./pages/user/VehicleHealth";
+import SecurityCenter from "./pages/user/SecurityCenter";
+import EmergencyAssistance from "./pages/user/EmergencyAssistance";
+import ChargingSimulator from "./pages/user/ChargingSimulator";
 
 // Public Welcome / Landing Page
 import Welcome from "./pages/Welcome";
 
 // Field Technician Page
-import TechnicianDashboard from "./pages/TechnicianDashboard";
+import TechnicianDashboard from "./pages/technician/TechnicianDashboard";
 
 import "./App.css";
 
@@ -740,6 +743,18 @@ function App() {
           }
         />
         <Route
+          path="/owner/profitability"
+          element={
+            <ProtectedRoute allowedRoles={["STATION_OWNER", "OWNER", "ADMIN"]}>
+              <MainLayout>
+                <OwnerProfitabilityAdvisor />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/owner/profitability-advisor" element={<Navigate to="/owner/profitability" replace />} />
+        <Route path="/owner/expenses" element={<Navigate to="/owner/profitability" replace />} />
+        <Route
           path="/owner/maintenance"
           element={
             <ProtectedRoute allowedRoles={["STATION_OWNER", "OWNER"]}>
@@ -1129,7 +1144,18 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={["ADMIN"]}>
               <MainLayout>
-                <Payments />
+                <AdminPaymentReconciliation />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/admin/reconciliation" element={<Navigate to="/admin/payments" replace />} />
+        <Route
+          path="/admin/incidents"
+          element={
+            <ProtectedRoute allowedRoles={["ADMIN"]}>
+              <MainLayout>
+                <AdminIncidents />
               </MainLayout>
             </ProtectedRoute>
           }
@@ -1154,6 +1180,7 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/admin/monitor" element={<Navigate to="/admin/health" replace />} />
         <Route
           path="/admin/reviews"
           element={
@@ -1179,7 +1206,7 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={["ADMIN"]}>
               <MainLayout>
-                <OwnerMaintenance />
+                <AdminIncidents />
               </MainLayout>
             </ProtectedRoute>
           }

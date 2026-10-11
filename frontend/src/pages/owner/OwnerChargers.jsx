@@ -32,6 +32,7 @@ import {
   getOwnerStations,
 } from "../../services/ownerService";
 import { getSocket } from "../../services/socketService";
+import Pagination from "../../components/Pagination";
 
 export default function OwnerChargers() {
   const [searchParams] = useSearchParams();
@@ -44,9 +45,14 @@ export default function OwnerChargers() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingCharger, setEditingCharger] = useState(null);
   const [simulatorModalCharger, setSimulatorModalCharger] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
+
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(6);
 
   // Add Charger Form State
   const [formData, setFormData] = useState({
@@ -117,8 +123,6 @@ export default function OwnerChargers() {
       };
     }
   }, [selectedStation]);
-
-  const [editingCharger, setEditingCharger] = useState(null);
 
   const handleCreateCharger = async (e) => {
     e.preventDefault();
@@ -358,80 +362,95 @@ export default function OwnerChargers() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredChargers.map((charger) => {
-            const chargerCode = charger.charger_id || charger.chargerId || `CHG00${charger.id}`;
-            const chargerTitle = charger.charger_name || charger.name || `Charger ${chargerCode}`;
-            const powerRating = charger.power_kw || charger.powerKw || charger.powerRating || 60;
-            const stationTitle = charger.station_name || charger.stationId || "EV Power Station";
-            const currentStatus = (charger.status || "AVAILABLE").toUpperCase();
-            const chargerType = charger.charger_type || charger.chargerType || "DC_FAST";
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredChargers.slice((Math.min(page, Math.ceil(filteredChargers.length / limit) || 1) - 1) * limit, Math.min(page, Math.ceil(filteredChargers.length / limit) || 1) * limit).map((charger) => {
+              const chargerCode = charger.charger_id || charger.chargerId || `CHG00${charger.id}`;
+              const chargerTitle = charger.charger_name || charger.name || `Charger ${chargerCode}`;
+              const powerRating = charger.power_kw || charger.powerKw || charger.powerRating || 60;
+              const stationTitle = charger.station_name || charger.stationId || "EV Power Station";
+              const currentStatus = (charger.status || "AVAILABLE").toUpperCase();
+              const chargerType = charger.charger_type || charger.chargerType || "DC_FAST";
 
-            return (
-              <div
-                key={charger.id || chargerCode}
-                className="p-5 rounded-3xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-emerald-500/40 transition-all shadow-sm flex flex-col justify-between space-y-4"
-              >
-                <div>
-                  {/* Top Bar */}
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
-                      {chargerCode}
-                    </span>
-                    <span className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${getStatusBadge(currentStatus)}`}>
-                      {currentStatus}
-                    </span>
+              return (
+                <div
+                  key={charger.id || chargerCode}
+                  className="p-5 rounded-3xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-emerald-500/40 transition-all shadow-sm flex flex-col justify-between space-y-4"
+                >
+                  <div>
+                    {/* Top Bar */}
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                        {chargerCode}
+                      </span>
+                      <span className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${getStatusBadge(currentStatus)}`}>
+                        {currentStatus}
+                      </span>
+                    </div>
+
+                    {/* Charger Title */}
+                    <h3 className="text-base font-bold text-[var(--text-primary)] leading-tight">{chargerTitle}</h3>
+                    <p className="text-xs text-[var(--text-muted)] flex items-center gap-1 mt-1">
+                      <Building2 size={12} /> {stationTitle}
+                    </p>
+
+                    {/* Specifications Card */}
+                    <div className="mt-3.5 p-3 rounded-2xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-[var(--text-muted)] block text-[10px] uppercase font-bold">Power Output</span>
+                        <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">{powerRating} kW</span>
+                      </div>
+                      <div>
+                        <span className="text-[var(--text-muted)] block text-[10px] uppercase font-bold">Standard</span>
+                        <span className="font-bold text-[var(--text-primary)]">{chargerType.replace("_", " ")}</span>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Charger Title */}
-                  <h3 className="text-base font-bold text-[var(--text-primary)] leading-tight">{chargerTitle}</h3>
-                  <p className="text-xs text-[var(--text-muted)] flex items-center gap-1 mt-1">
-                    <Building2 size={12} /> {stationTitle}
-                  </p>
-
-                  {/* Specifications Card */}
-                  <div className="mt-3.5 p-3 rounded-2xl bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <span className="text-[var(--text-muted)] block text-[10px] uppercase font-bold">Power Output</span>
-                      <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">{powerRating} kW</span>
-                    </div>
-                    <div>
-                      <span className="text-[var(--text-muted)] block text-[10px] uppercase font-bold">Standard</span>
-                      <span className="font-bold text-[var(--text-primary)]">{chargerType.replace("_", " ")}</span>
-                    </div>
+                  {/* Action Buttons */}
+                  <div className="pt-2 border-t border-[var(--border-subtle)] flex items-center gap-2">
+                    <button
+                      onClick={() => setSimulatorModalCharger(charger)}
+                      className="flex-1 py-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Sliders size={13} /> OCPP Controls
+                    </button>
+                    <button
+                      onClick={() => setEditingCharger({
+                        ...charger,
+                        powerRating: charger.power_kw || charger.powerKw || 60,
+                        connectorType: charger.connector_type || charger.connectorType || "CCS2",
+                      })}
+                      className="p-2 bg-[var(--bg-surface-raised)] hover:bg-[var(--bg-surface)] text-[var(--text-primary)] rounded-xl border border-[var(--border-subtle)] transition cursor-pointer"
+                      title="Edit Charger Configuration"
+                    >
+                      <Edit2 size={13} />
+                    </button>
+                    <button
+                      onClick={() => handleDeactivateCharger(charger.charger_id || charger.id)}
+                      className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl border border-rose-500/20 transition cursor-pointer"
+                      title="Mark Charger Offline"
+                    >
+                      <Power size={13} />
+                    </button>
                   </div>
                 </div>
+              );
+            })}
+          </div>
 
-                {/* Action Buttons */}
-                <div className="pt-2 border-t border-[var(--border-subtle)] flex items-center gap-2">
-                  <button
-                    onClick={() => setSimulatorModalCharger(charger)}
-                    className="flex-1 py-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
-                  >
-                    <Sliders size={13} /> OCPP Controls
-                  </button>
-                  <button
-                    onClick={() => setEditingCharger({
-                      ...charger,
-                      powerRating: charger.power_kw || charger.powerKw || 60,
-                      connectorType: charger.connector_type || charger.connectorType || "CCS2",
-                    })}
-                    className="p-2 bg-[var(--bg-surface-raised)] hover:bg-[var(--bg-surface)] text-[var(--text-primary)] rounded-xl border border-[var(--border-subtle)] transition cursor-pointer"
-                    title="Edit Charger Configuration"
-                  >
-                    <Edit2 size={13} />
-                  </button>
-                  <button
-                    onClick={() => handleDeactivateCharger(charger.charger_id || charger.id)}
-                    className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl border border-rose-500/20 transition cursor-pointer"
-                    title="Mark Charger Offline"
-                  >
-                    <Power size={13} />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+          <Pagination
+            page={Math.min(page, Math.ceil(filteredChargers.length / limit) || 1)}
+            totalPages={Math.ceil(filteredChargers.length / limit) || 1}
+            totalItems={filteredChargers.length}
+            limit={limit}
+            onPageChange={(p) => setPage(p)}
+            onLimitChange={(l) => {
+              setLimit(l);
+              setPage(1);
+            }}
+            limitOptions={[6, 12, 24, 48]}
+          />
         </div>
       )}
 

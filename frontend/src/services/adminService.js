@@ -37,30 +37,18 @@ export const adminService = {
   },
 
   createCustomer: async (customerData) => {
-    try {
-      const res = await api.post("/admin/customers", customerData);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.post("/admin/customers", customerData);
+    return res.data;
   },
 
   updateCustomer: async (customerId, customerData) => {
-    try {
-      const res = await api.put(`/admin/customers/${customerId}`, customerData);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.put(`/admin/customers/${customerId}`, customerData);
+    return res.data;
   },
 
   deleteCustomer: async (customerId) => {
-    try {
-      const res = await api.delete(`/admin/customers/${customerId}`);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.delete(`/admin/customers/${customerId}`);
+    return res.data;
   },
 
   updateUserRole: async (userId, role) => {
@@ -72,7 +60,7 @@ export const adminService = {
     }
   },
 
-  // 3. Station Owners Management (CRUD)
+  // 3. Station Owners Management & Verification Center (A. Owner Verification)
   getOwners: async (params = {}) => {
     try {
       const res = await api.get("/admin/owners", { params });
@@ -83,30 +71,18 @@ export const adminService = {
   },
 
   createOwner: async (ownerData) => {
-    try {
-      const res = await api.post("/admin/owners", ownerData);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.post("/admin/owners", ownerData);
+    return res.data;
   },
 
   updateOwner: async (ownerId, ownerData) => {
-    try {
-      const res = await api.put(`/admin/owners/${ownerId}`, ownerData);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.put(`/admin/owners/${ownerId}`, ownerData);
+    return res.data;
   },
 
   deleteOwner: async (ownerId) => {
-    try {
-      const res = await api.delete(`/admin/owners/${ownerId}`);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.delete(`/admin/owners/${ownerId}`);
+    return res.data;
   },
 
   getPendingOwners: async () => {
@@ -127,9 +103,27 @@ export const adminService = {
     }
   },
 
-  rejectOwner: async (ownerId) => {
+  rejectOwner: async (ownerId, reason = "Credentials rejected by administrator") => {
     try {
-      const res = await api.put(`/admin/owners/${ownerId}/reject`);
+      const res = await api.put(`/admin/owners/${ownerId}/reject`, { reason });
+      return res.data;
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
+  },
+
+  suspendOwner: async (ownerId, reason = "Suspended by administrator") => {
+    try {
+      const res = await api.put(`/admin/owners/${ownerId}/suspend`, { reason });
+      return res.data;
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
+  },
+
+  reactivateOwner: async (ownerId) => {
+    try {
+      const res = await api.put(`/admin/owners/${ownerId}/reactivate`);
       return res.data;
     } catch (err) {
       return { success: false, message: err.message };
@@ -147,33 +141,21 @@ export const adminService = {
   },
 
   createTechnician: async (techData) => {
-    try {
-      const res = await api.post("/admin/technicians", techData);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.post("/admin/technicians", techData);
+    return res.data;
   },
 
   updateTechnician: async (techId, techData) => {
-    try {
-      const res = await api.put(`/admin/technicians/${techId}`, techData);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.put(`/admin/technicians/${techId}`, techData);
+    return res.data;
   },
 
   deleteTechnician: async (techId) => {
-    try {
-      const res = await api.delete(`/admin/technicians/${techId}`);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.delete(`/admin/technicians/${techId}`);
+    return res.data;
   },
 
-  // 5. Stations Management (CRUD)
+  // 5. Stations Management & Verification Center (A. Station Verification)
   getStations: async (params = {}) => {
     try {
       const res = await api.get("/admin/stations", { params });
@@ -183,31 +165,28 @@ export const adminService = {
     }
   },
 
-  createStation: async (stationData) => {
+  getStationPhotos: async (stationId) => {
     try {
-      const res = await api.post("/admin/stations", stationData);
+      const res = await api.get(`/admin/stations/${stationId}/photos`);
       return res.data;
     } catch (err) {
-      throw err;
+      return { success: false, data: [] };
     }
+  },
+
+  createStation: async (stationData) => {
+    const res = await api.post("/admin/stations", stationData);
+    return res.data;
   },
 
   updateStation: async (stationId, stationData) => {
-    try {
-      const res = await api.put(`/admin/stations/${stationId}`, stationData);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.put(`/admin/stations/${stationId}`, stationData);
+    return res.data;
   },
 
   deleteStation: async (stationId) => {
-    try {
-      const res = await api.delete(`/admin/stations/${stationId}`);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.delete(`/admin/stations/${stationId}`);
+    return res.data;
   },
 
   getPendingStations: async () => {
@@ -228,25 +207,57 @@ export const adminService = {
     }
   },
 
-  rejectStation: async (stationId) => {
+  rejectStation: async (stationId, reason = "Station electrical/location parameters rejected") => {
     try {
-      const res = await api.put(`/admin/stations/${stationId}/reject`);
+      const res = await api.put(`/admin/stations/${stationId}/reject`, { reason });
       return res.data;
     } catch (err) {
       return { success: false, message: err.message };
     }
   },
 
-  suspendStation: async (stationId) => {
+  suspendStation: async (stationId, reason = "Suspended by administrator") => {
     try {
-      const res = await api.put(`/admin/stations/${stationId}/suspend`);
+      const res = await api.put(`/admin/stations/${stationId}/suspend`, { reason });
       return res.data;
     } catch (err) {
       return { success: false, message: err.message };
     }
   },
 
-  // 6. Chargers Management (CRUD)
+  reactivateStation: async (stationId) => {
+    try {
+      const res = await api.put(`/admin/stations/${stationId}/reactivate`);
+      return res.data;
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
+  },
+
+  // 6. Network Live Monitor & Safe Remote Commands (B. Network Live Monitor & Remote Control Safety)
+  getNetworkLiveMonitor: async (params = {}) => {
+    try {
+      const res = await api.get("/admin/network/monitor", { params });
+      return res.data;
+    } catch (err) {
+      return { success: false, data: [], summary: {} };
+    }
+  },
+
+  sendRemoteCommand: async (chargerId, command, payload = {}, isSimulator = true) => {
+    try {
+      const res = await api.post(`/admin/chargers/${chargerId}/remote-command`, {
+        command,
+        payload,
+        isSimulator,
+      });
+      return res.data;
+    } catch (err) {
+      return { success: false, message: err.response?.data?.message || err.message };
+    }
+  },
+
+  // 7. Chargers Management (CRUD)
   getChargers: async (params = {}) => {
     try {
       const res = await api.get("/admin/chargers", { params });
@@ -257,33 +268,21 @@ export const adminService = {
   },
 
   createCharger: async (chargerData) => {
-    try {
-      const res = await api.post("/admin/chargers", chargerData);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.post("/admin/chargers", chargerData);
+    return res.data;
   },
 
   updateCharger: async (chargerId, chargerData) => {
-    try {
-      const res = await api.put(`/admin/chargers/${chargerId}`, chargerData);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.put(`/admin/chargers/${chargerId}`, chargerData);
+    return res.data;
   },
 
   deleteCharger: async (chargerId) => {
-    try {
-      const res = await api.delete(`/admin/chargers/${chargerId}`);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.delete(`/admin/chargers/${chargerId}`);
+    return res.data;
   },
 
-  // 7. Bookings Management (CRUD)
+  // 8. Bookings Management (CRUD)
   getBookings: async (params = {}) => {
     try {
       const res = await api.get("/admin/bookings", { params });
@@ -294,33 +293,21 @@ export const adminService = {
   },
 
   createBooking: async (bookingData) => {
-    try {
-      const res = await api.post("/admin/bookings", bookingData);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.post("/admin/bookings", bookingData);
+    return res.data;
   },
 
   updateBooking: async (bookingId, bookingData) => {
-    try {
-      const res = await api.put(`/admin/bookings/${bookingId}`, bookingData);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.put(`/admin/bookings/${bookingId}`, bookingData);
+    return res.data;
   },
 
   deleteBooking: async (bookingId) => {
-    try {
-      const res = await api.delete(`/admin/bookings/${bookingId}`);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.delete(`/admin/bookings/${bookingId}`);
+    return res.data;
   },
 
-  // 8. Payments Management
+  // 9. Payment Reconciliation (D. Payment Reconciliation)
   getPayments: async (params = {}) => {
     try {
       const res = await api.get("/admin/payments", { params });
@@ -330,76 +317,103 @@ export const adminService = {
     }
   },
 
+  getPaymentsReconciliation: async (params = {}) => {
+    try {
+      const res = await api.get("/admin/payments/reconciliation", { params });
+      return res.data;
+    } catch (err) {
+      return { success: false, data: [] };
+    }
+  },
+
+  refundPayment: async (paymentId, refundData = {}) => {
+    try {
+      const res = await api.post(`/admin/payments/${paymentId}/refund`, refundData);
+      return res.data;
+    } catch (err) {
+      return { success: false, message: err.response?.data?.message || err.message };
+    }
+  },
+
   updatePayment: async (paymentId, data) => {
-    try {
-      const res = await api.put(`/admin/payments/${paymentId}`, data);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await api.put(`/admin/payments/${paymentId}`, data);
+    return res.data;
   },
 
-  // 9. Sessions Management
-  getSessions: async () => {
+  // 10. Sessions Management
+  getSessions: async (params = {}) => {
     try {
-      const res = await api.get("/admin/sessions");
+      const res = await api.get("/admin/sessions", { params });
       return res.data;
     } catch (err) {
       return { success: false, data: [] };
     }
   },
 
-  // 10. Maintenance Management (CRUD)
-  getMaintenance: async () => {
+  // 11. Incident and Maintenance Center (C. Incident and Maintenance Center)
+  getMaintenance: async (params = {}) => {
     try {
-      const res = await api.get("/admin/maintenance");
+      const res = await api.get("/admin/maintenance", { params });
       return res.data;
     } catch (err) {
       return { success: false, data: [] };
     }
+  },
+
+  getIncidents: async (params = {}) => {
+    return adminService.getMaintenance(params);
+  },
+
+  createIncident: async (incidentData) => {
+    const res = await api.post("/admin/incidents", incidentData);
+    return res.data;
+  },
+
+  updateIncident: async (incidentId, incidentData) => {
+    const res = await api.put(`/admin/incidents/${incidentId}`, incidentData);
+    return res.data;
+  },
+
+  deleteIncident: async (incidentId) => {
+    const res = await api.delete(`/admin/incidents/${incidentId}`);
+    return res.data;
   },
 
   createMaintenance: async (data) => {
-    try {
-      const res = await api.post("/admin/maintenance", data);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    return adminService.createIncident(data);
   },
 
   updateMaintenance: async (id, data) => {
-    try {
-      const res = await api.put(`/admin/maintenance/${id}`, data);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    return adminService.updateIncident(id, data);
   },
 
   deleteMaintenance: async (id) => {
-    try {
-      const res = await api.delete(`/admin/maintenance/${id}`);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    return adminService.deleteIncident(id);
   },
 
-  // 11. Audit Logs
-  getAuditLogs: async () => {
+  // 12. Security and Audit Center (E. Security and Audit Center)
+  getAuditLogs: async (params = {}) => {
     try {
-      const res = await api.get("/admin/audit-logs");
+      const res = await api.get("/admin/audit-logs", { params });
       return res.data;
     } catch (err) {
       return { success: false, data: [] };
     }
   },
 
-  // 12. Reports
-  getReports: async () => {
+  // 13. Network Analytics & Reports (F. Network Analytics)
+  getAnalytics: async (params = {}) => {
     try {
-      const res = await api.get("/admin/reports");
+      const res = await api.get("/admin/analytics", { params });
+      return res.data;
+    } catch (err) {
+      return { success: false, data: {} };
+    }
+  },
+
+  getReports: async (params = {}) => {
+    try {
+      const res = await api.get("/admin/reports", { params });
       return res.data;
     } catch (err) {
       return { success: false, data: {} };

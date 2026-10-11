@@ -21,6 +21,7 @@ import {
   startChargingSession,
 } from "../../services/ownerService";
 import { getSocket } from "../../services/socketService";
+import Pagination from "../../components/Pagination";
 
 export default function OwnerBookings() {
   const [bookings, setBookings] = useState([]);
@@ -28,6 +29,10 @@ export default function OwnerBookings() {
   const [activeTab, setActiveTab] = useState("ALL"); // ALL, PENDING, CONFIRMED, CHARGING, COMPLETED, CANCELLED
   const [searchTerm, setSearchTerm] = useState("");
   const [toastMsg, setToastMsg] = useState("");
+
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(6);
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -185,98 +190,114 @@ export default function OwnerBookings() {
         </div>
       ) : (
         <div className="space-y-4">
-          {filteredBookings.map((b) => {
-            const bId = b.bookingId || b.booking_id || `EV000${b.id}`;
-            const cName = b.customerName || b.customer_name || "Customer";
-            const vNumber = b.vehicleNumber || b.registration_number || "TN01EV0001";
-            const stName = b.stationName || b.station_name || "EV Power Hub";
-            const bDate = b.bookingDate || b.booking_date || "Today";
-            const sTime = b.startTime || b.start_time || "14:00";
-            const estAmount = parseFloat(b.estimatedAmount || b.totalAmount || b.amount || 250);
-            const status = (b.status || b.booking_status || "CONFIRMED").toUpperCase();
+          <div className="space-y-4">
+            {filteredBookings.slice((Math.min(page, Math.ceil(filteredBookings.length / limit) || 1) - 1) * limit, Math.min(page, Math.ceil(filteredBookings.length / limit) || 1) * limit).map((b) => {
+              const bId = b.bookingId || b.booking_id || `EV000${b.id}`;
+              const cName = b.customerName || b.customer_name || "Customer";
+              const vNumber = b.vehicleNumber || b.registration_number || "TN01EV0001";
+              const stName = b.stationName || b.station_name || "EV Power Hub";
+              const bDate = b.bookingDate || b.booking_date || "Today";
+              const sTime = b.startTime || b.start_time || "14:00";
+              const estAmount = parseFloat(b.estimatedAmount || b.totalAmount || b.amount || 250);
+              const status = (b.status || b.booking_status || "CONFIRMED").toUpperCase();
 
-            const isConfirmed = status === "CONFIRMED";
-            const isCharging = status === "CHARGING" || status === "ACTIVE" || status === "IN_PROGRESS";
-            const isCompleted = status === "COMPLETED";
+              const isConfirmed = status === "CONFIRMED";
+              const isCharging = status === "CHARGING" || status === "ACTIVE" || status === "IN_PROGRESS";
+              const isCompleted = status === "COMPLETED";
 
-            return (
-              <div
-                key={bId}
-                className="bg-[var(--bg-surface)] rounded-3xl p-5 border border-[var(--border-subtle)] hover:border-blue-500/40 transition-all flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-sm"
-              >
-                {/* Left: Info */}
-                <div className="flex-1 space-y-2">
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono font-bold text-[var(--accent-primary)] text-xs px-2.5 py-1 bg-blue-500/10 rounded-xl border border-blue-500/20">
-                      {bId}
-                    </span>
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full font-mono font-bold uppercase text-[10px] ${
-                        isConfirmed
-                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
-                          : isCharging
-                          ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
-                          : isCompleted
-                          ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20"
-                          : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
-                      }`}
-                    >
-                      {status}
-                    </span>
+              return (
+                <div
+                  key={bId}
+                  className="bg-[var(--bg-surface)] rounded-3xl p-5 border border-[var(--border-subtle)] hover:border-blue-500/40 transition-all flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-sm"
+                >
+                  {/* Left: Info */}
+                  <div className="flex-1 space-y-2">
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono font-bold text-[var(--accent-primary)] text-xs px-2.5 py-1 bg-blue-500/10 rounded-xl border border-blue-500/20">
+                        {bId}
+                      </span>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full font-mono font-bold uppercase text-[10px] ${
+                          isConfirmed
+                            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                            : isCharging
+                            ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
+                            : isCompleted
+                            ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20"
+                            : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
+                        }`}
+                      >
+                        {status}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs pt-1">
+                      <div>
+                        <span className="text-[var(--text-muted)] block text-[10px] uppercase font-bold">Driver</span>
+                        <strong className="text-[var(--text-primary)]">{cName}</strong>
+                        <div className="text-[10px] text-[var(--text-muted)] font-mono">{vNumber}</div>
+                      </div>
+
+                      <div>
+                        <span className="text-[var(--text-muted)] block text-[10px] uppercase font-bold">Station & Bay</span>
+                        <strong className="text-[var(--text-primary)] truncate block max-w-[150px]">{stName}</strong>
+                        <div className="text-[10px] text-[var(--accent-primary)] font-medium">{b.chargerId || b.charger_id || "Bay 01"}</div>
+                      </div>
+
+                      <div>
+                        <span className="text-[var(--text-muted)] block text-[10px] uppercase font-bold">Slot Time</span>
+                        <strong className="text-[var(--text-primary)]">{bDate}</strong>
+                        <div className="text-[10px] text-[var(--text-muted)]">{sTime}</div>
+                      </div>
+
+                      <div>
+                        <span className="text-[var(--text-muted)] block text-[10px] uppercase font-bold">Estimated Cost</span>
+                        <strong className="text-emerald-600 dark:text-emerald-400 font-mono text-sm">₹{estAmount}</strong>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs pt-1">
-                    <div>
-                      <span className="text-[var(--text-muted)] block text-[10px] uppercase font-bold">Driver</span>
-                      <strong className="text-[var(--text-primary)]">{cName}</strong>
-                      <div className="text-[10px] text-[var(--text-muted)] font-mono">{vNumber}</div>
-                    </div>
+                  {/* Right: Actions */}
+                  <div className="flex items-center gap-2 pt-3 lg:pt-0 border-t lg:border-t-0 border-[var(--border-subtle)]">
+                    {isConfirmed && (
+                      <button
+                        onClick={() => handleStartSession(b)}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-md shadow-emerald-500/20 cursor-pointer"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-white" />
+                        Start Charging
+                      </button>
+                    )}
 
-                    <div>
-                      <span className="text-[var(--text-muted)] block text-[10px] uppercase font-bold">Station & Bay</span>
-                      <strong className="text-[var(--text-primary)] truncate block max-w-[150px]">{stName}</strong>
-                      <div className="text-[10px] text-[var(--accent-primary)] font-medium">{b.chargerId || b.charger_id || "Bay 01"}</div>
-                    </div>
-
-                    <div>
-                      <span className="text-[var(--text-muted)] block text-[10px] uppercase font-bold">Slot Time</span>
-                      <strong className="text-[var(--text-primary)]">{bDate}</strong>
-                      <div className="text-[10px] text-[var(--text-muted)]">{sTime}</div>
-                    </div>
-
-                    <div>
-                      <span className="text-[var(--text-muted)] block text-[10px] uppercase font-bold">Estimated Cost</span>
-                      <strong className="text-emerald-600 dark:text-emerald-400 font-mono text-sm">₹{estAmount}</strong>
-                    </div>
+                    {!isCompleted && status !== "CANCELLED" && (
+                      <button
+                        onClick={() => handleStatusChange(bId, "CANCELLED")}
+                        className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl text-xs font-bold transition border border-rose-500/20 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    )}
                   </div>
                 </div>
+              );
+            })}
+          </div>
 
-                {/* Right: Actions */}
-                <div className="flex items-center gap-2 pt-3 lg:pt-0 border-t lg:border-t-0 border-[var(--border-subtle)]">
-                  {isConfirmed && (
-                    <button
-                      onClick={() => handleStartSession(b)}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-md shadow-emerald-500/20 cursor-pointer"
-                    >
-                      <Play className="w-3.5 h-3.5 fill-white" />
-                      Start Charging
-                    </button>
-                  )}
-
-                  {!isCompleted && status !== "CANCELLED" && (
-                    <button
-                      onClick={() => handleStatusChange(bId, "CANCELLED")}
-                      className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl text-xs font-bold transition border border-rose-500/20 cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          <Pagination
+            page={Math.min(page, Math.ceil(filteredBookings.length / limit) || 1)}
+            totalPages={Math.ceil(filteredBookings.length / limit) || 1}
+            totalItems={filteredBookings.length}
+            limit={limit}
+            onPageChange={(p) => setPage(p)}
+            onLimitChange={(l) => {
+              setLimit(l);
+              setPage(1);
+            }}
+            limitOptions={[6, 12, 24, 50]}
+          />
         </div>
       )}
     </div>
   );
 }
+

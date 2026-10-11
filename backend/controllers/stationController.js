@@ -252,10 +252,10 @@ export const formatStationWithSlots = (station, chargers = [], tariff = null, ac
     availableSlots,
     available_slots: availableSlots,
     occupiedConnectors: occupiedSlotsCount,
-    approval_status: station.approval_status || "APPROVED",
-    approvalStatus: station.approval_status || "APPROVED",
-    status: station.status || "ACTIVE",
-    rawStatus: station.status || "ACTIVE",
+    approval_status: station.approval_status || "PENDING",
+    approvalStatus: station.approval_status || "PENDING",
+    status: station.status || "INACTIVE",
+    rawStatus: station.status || "INACTIVE",
     operationalStatus: station.status === "ACTIVE" ? "Available" : station.status,
     availabilityStatus: station.status === "ACTIVE" ? "Available" : station.status,
     isActive: station.status === "ACTIVE",
@@ -289,7 +289,7 @@ export const formatStationWithSlots = (station, chargers = [], tariff = null, ac
 export const getApprovedStations = async (req, res) => {
   try {
     const stations = await query(
-      "SELECT * FROM stations WHERE (status = 'ACTIVE' OR approval_status = 'APPROVED') AND approval_status != 'REJECTED' ORDER BY id ASC"
+      "SELECT * FROM stations WHERE approval_status = 'APPROVED' AND status = 'ACTIVE' ORDER BY id ASC"
     );
     const chargers = await query("SELECT * FROM chargers ORDER BY id ASC");
     const connectorsInDb = await query("SELECT * FROM charger_connectors ORDER BY id ASC");
@@ -324,7 +324,7 @@ export const getApprovedStations = async (req, res) => {
 export const getStationsMap = async (req, res) => {
   try {
     const stations = await query(
-      "SELECT * FROM stations WHERE (status = 'ACTIVE' OR approval_status = 'APPROVED') AND approval_status != 'REJECTED' ORDER BY id ASC"
+      "SELECT * FROM stations WHERE approval_status = 'APPROVED' AND status = 'ACTIVE' ORDER BY id ASC"
     );
     const chargers = await query("SELECT * FROM chargers ORDER BY id ASC");
     const tariffs = await query("SELECT * FROM tariffs WHERE status = 'ACTIVE' ORDER BY id DESC");
@@ -404,7 +404,12 @@ export const getStationsMap = async (req, res) => {
  */
 export const getStations = async (req, res) => {
   try {
-    const stations = await query("SELECT * FROM stations ORDER BY id ASC");
+    const isAdmin = (req.user?.role || "").toUpperCase() === "ADMIN";
+    const stations = await query(
+      isAdmin
+        ? "SELECT * FROM stations ORDER BY id ASC"
+        : "SELECT * FROM stations WHERE approval_status = 'APPROVED' AND status = 'ACTIVE' ORDER BY id ASC"
+    );
     const chargers = await query("SELECT * FROM chargers ORDER BY id ASC");
     const connectorsInDb = await query("SELECT * FROM charger_connectors ORDER BY id ASC");
     const tariffs = await query("SELECT * FROM tariffs WHERE status = 'ACTIVE' ORDER BY id DESC");

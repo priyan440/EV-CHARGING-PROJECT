@@ -20,6 +20,7 @@ import {
   createPaymentOrder,
   verifyPaymentTransaction,
 } from "../../services/ownerService";
+import Pagination from "../../components/Pagination";
 
 export default function OwnerRevenue() {
   const [revenueSummary, setRevenueSummary] = useState(null);
@@ -30,6 +31,9 @@ export default function OwnerRevenue() {
   const [payAmount, setPayAmount] = useState(350);
   const [paying, setPaying] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -228,7 +232,7 @@ export default function OwnerRevenue() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border-subtle)] text-[var(--text-primary)]">
-                {filteredTxns.map((t) => (
+                {filteredTxns.slice((page - 1) * limit, page * limit).map((t) => (
                   <tr key={t.paymentId || t.id || t._id} className="hover:bg-[var(--bg-surface-raised)] transition-colors">
                     <td className="p-3 font-mono font-bold text-[var(--accent-primary)]">{t.paymentId || t.payment_id}</td>
                     <td className="p-3">
@@ -264,6 +268,19 @@ export default function OwnerRevenue() {
                 ))}
               </tbody>
             </table>
+
+            <Pagination
+              page={Math.min(page, Math.ceil(filteredTxns.length / limit) || 1)}
+              totalPages={Math.ceil(filteredTxns.length / limit) || 1}
+              totalItems={filteredTxns.length}
+              limit={limit}
+              onPageChange={(p) => setPage(p)}
+              onLimitChange={(l) => {
+                setLimit(l);
+                setPage(1);
+              }}
+              limitOptions={[5, 10, 20, 50]}
+            />
           </div>
         )}
       </div>

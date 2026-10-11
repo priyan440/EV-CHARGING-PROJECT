@@ -20,6 +20,20 @@ export const initializeDatabaseSchema = async () => {
       console.log("✅ Relational MySQL Schema verified successfully");
     }
 
+    try {
+      const { applyEnhancements } = await import("./apply_enhancements.js");
+      await applyEnhancements();
+    } catch (enhErr) {
+      console.warn("Enhancements check notice:", enhErr.message);
+    }
+
+    try {
+      const { applyRepairs } = await import("./apply_repairs.js");
+      await applyRepairs();
+    } catch (repairErr) {
+      console.warn("Repairs check notice:", repairErr.message);
+    }
+
     console.log("✨ Single Source of Truth MySQL Database is ready (Empty State - Zero Seed Data)");
     return true;
   } catch (error) {

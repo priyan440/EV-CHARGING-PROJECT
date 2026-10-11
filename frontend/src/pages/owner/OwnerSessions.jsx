@@ -23,6 +23,7 @@ import {
   stopChargingSession,
 } from "../../services/ownerService";
 import { getSocket } from "../../services/socketService";
+import Pagination from "../../components/Pagination";
 
 export default function OwnerSessions() {
   const [liveSessions, setLiveSessions] = useState([]);
@@ -31,6 +32,11 @@ export default function OwnerSessions() {
   const [activeTab, setActiveTab] = useState("LIVE"); // LIVE | HISTORY
   const [searchTerm, setSearchTerm] = useState("");
   const [toastMsg, setToastMsg] = useState("");
+  const [pageLive, setPageLive] = useState(1);
+  const [limitLive, setLimitLive] = useState(6);
+  const [pageHistory, setPageHistory] = useState(1);
+  const [limitHistory, setLimitHistory] = useState(10);
+
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -321,7 +327,7 @@ export default function OwnerSessions() {
                     </td>
                   </tr>
                 ) : (
-                  filteredHistory.map((s) => (
+                  filteredHistory.slice((pageHistory - 1) * limitHistory, pageHistory * limitHistory).map((s) => (
                     <tr key={s.sessionId || s.session_id || s.id} className="hover:bg-[var(--bg-surface-raised)] transition-colors">
                       <td className="p-3 font-mono font-bold text-[var(--accent-primary)]">
                         {s.sessionId || s.session_id || `SES000${s.id}`}
@@ -353,6 +359,19 @@ export default function OwnerSessions() {
                 )}
               </tbody>
             </table>
+
+            <Pagination
+              page={Math.min(pageHistory, Math.ceil(filteredHistory.length / limitHistory) || 1)}
+              totalPages={Math.ceil(filteredHistory.length / limitHistory) || 1}
+              totalItems={filteredHistory.length}
+              limit={limitHistory}
+              onPageChange={(p) => setPageHistory(p)}
+              onLimitChange={(l) => {
+                setLimitHistory(l);
+                setPageHistory(1);
+              }}
+              limitOptions={[5, 10, 20, 50]}
+            />
           </div>
         </div>
       )}

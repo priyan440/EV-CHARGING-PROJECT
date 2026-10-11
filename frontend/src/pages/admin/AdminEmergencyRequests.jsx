@@ -16,6 +16,7 @@ import {
   Zap,
 } from "lucide-react";
 import { emergencyService } from "../../services/emergencyService";
+import Pagination from "../../components/Pagination";
 
 export default function AdminEmergencyRequests() {
   const [requests, setRequests] = useState([]);
@@ -23,6 +24,9 @@ export default function AdminEmergencyRequests() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [toastMsg, setToastMsg] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(6);
+
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -146,80 +150,95 @@ export default function AdminEmergencyRequests() {
           <p className="text-xs text-[var(--text-muted)]">All submitted driver roadside assistance requests will appear here for operational dispatch.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filtered.map((req) => (
-            <div
-              key={req.request_id || req.id}
-              className="bg-[var(--bg-surface)] p-6 rounded-3xl border border-[var(--border-subtle)] hover:border-red-500/40 transition shadow-sm space-y-4"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-mono font-bold text-red-500 text-xs px-2.5 py-0.5 rounded-lg bg-red-500/10 border border-red-500/20">
-                  {req.request_id || `EMG00000${req.id}`}
-                </span>
-                <span
-                  className={`text-[10px] font-bold font-mono uppercase px-2.5 py-0.5 rounded-full border ${
-                    req.status === "RESOLVED"
-                      ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                      : req.status === "DISPATCHED" || req.status === "IN_PROGRESS"
-                      ? "bg-amber-500/10 text-amber-500 border-amber-500/20 animate-pulse"
-                      : "bg-red-500/10 text-red-500 border-red-500/20"
-                  }`}
-                >
-                  {req.status || "DISPATCHED"}
-                </span>
-              </div>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {filtered.slice((page - 1) * limit, page * limit).map((req) => (
+              <div
+                key={req.request_id || req.id}
+                className="bg-[var(--bg-surface)] p-6 rounded-3xl border border-[var(--border-subtle)] hover:border-red-500/40 transition shadow-sm space-y-4"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-mono font-bold text-red-500 text-xs px-2.5 py-0.5 rounded-lg bg-red-500/10 border border-red-500/20">
+                    {req.request_id || `EMG00000${req.id}`}
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold font-mono uppercase px-2.5 py-0.5 rounded-full border ${
+                      req.status === "RESOLVED"
+                        ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                        : req.status === "DISPATCHED" || req.status === "IN_PROGRESS"
+                        ? "bg-amber-500/10 text-amber-500 border-amber-500/20 animate-pulse"
+                        : "bg-red-500/10 text-red-500 border-red-500/20"
+                    }`}
+                  >
+                    {req.status || "DISPATCHED"}
+                  </span>
+                </div>
 
-              <div>
-                <h3 className="text-base font-bold text-[var(--text-primary)]">
-                  {String(req.emergency_type || "BATTERY_DEPLETED").replace(/_/g, " ")}
-                </h3>
-                <p className="text-xs text-[var(--text-muted)] mt-1 flex items-center gap-1.5">
-                  <MapPin size={13} className="text-red-500 shrink-0" />
-                  <span className="truncate">{req.location_address || "GPS Coordinates Pinpoint"}</span>
-                </p>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2 bg-[var(--bg-surface-raised)] p-3.5 rounded-2xl text-xs border border-[var(--border-subtle)]">
                 <div>
-                  <span className="text-[10px] text-[var(--text-muted)] uppercase block font-bold">Driver</span>
-                  <span className="font-bold text-[var(--text-primary)] truncate block">{req.user_name || "EV Driver"}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-[var(--text-muted)] uppercase block font-bold">Battery SOC</span>
-                  <span className="font-mono font-black text-red-500 text-sm">{req.current_soc || 8}%</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-[var(--text-muted)] uppercase block font-bold">Vehicle</span>
-                  <span className="font-bold text-[var(--text-primary)] truncate block">{req.vehicle_model || "Electric 4W"}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--border-subtle)]">
-                <div className="text-[10px] text-[var(--text-muted)] font-mono">
-                  ETA: ~{req.eta_minutes || 15} mins • Unit: {req.assigned_unit || "Rescue Van #04"}
+                  <h3 className="text-base font-bold text-[var(--text-primary)]">
+                    {String(req.emergency_type || "BATTERY_DEPLETED").replace(/_/g, " ")}
+                  </h3>
+                  <p className="text-xs text-[var(--text-muted)] mt-1 flex items-center gap-1.5">
+                    <MapPin size={13} className="text-red-500 shrink-0" />
+                    <span className="truncate">{req.location_address || "GPS Coordinates Pinpoint"}</span>
+                  </p>
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  {req.status !== "RESOLVED" && (
-                    <button
-                      onClick={() => handleUpdateStatus(req.request_id || req.id, "RESOLVED")}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition cursor-pointer shadow-sm"
-                    >
-                      Resolve
-                    </button>
-                  )}
-                  {req.status === "PENDING" && (
-                    <button
-                      onClick={() => handleUpdateStatus(req.request_id || req.id, "DISPATCHED")}
-                      className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition cursor-pointer shadow-sm"
-                    >
-                      Dispatch
-                    </button>
-                  )}
+                <div className="grid grid-cols-3 gap-2 bg-[var(--bg-surface-raised)] p-3.5 rounded-2xl text-xs border border-[var(--border-subtle)]">
+                  <div>
+                    <span className="text-[10px] text-[var(--text-muted)] uppercase block font-bold">Driver</span>
+                    <span className="font-bold text-[var(--text-primary)] truncate block">{req.user_name || "EV Driver"}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-[var(--text-muted)] uppercase block font-bold">Battery SOC</span>
+                    <span className="font-mono font-black text-red-500 text-sm">{req.current_soc || 8}%</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-[var(--text-muted)] uppercase block font-bold">Vehicle</span>
+                    <span className="font-bold text-[var(--text-primary)] truncate block">{req.vehicle_model || "Electric 4W"}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--border-subtle)]">
+                  <div className="text-[10px] text-[var(--text-muted)] font-mono">
+                    ETA: ~{req.eta_minutes || 15} mins • Unit: {req.assigned_unit || "Rescue Van #04"}
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {req.status !== "RESOLVED" && (
+                      <button
+                        onClick={() => handleUpdateStatus(req.request_id || req.id, "RESOLVED")}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition cursor-pointer shadow-sm"
+                      >
+                        Resolve
+                      </button>
+                    )}
+                    {req.status === "PENDING" && (
+                      <button
+                        onClick={() => handleUpdateStatus(req.request_id || req.id, "DISPATCHED")}
+                        className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition cursor-pointer shadow-sm"
+                      >
+                        Dispatch
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+
+          <Pagination
+            page={Math.min(page, Math.ceil(filtered.length / limit) || 1)}
+            totalPages={Math.ceil(filtered.length / limit) || 1}
+            totalItems={filtered.length}
+            limit={limit}
+            onPageChange={(p) => setPage(p)}
+            onLimitChange={(l) => {
+              setLimit(l);
+              setPage(1);
+            }}
+            limitOptions={[4, 6, 12, 24]}
+          />
         </div>
       )}
     </div>

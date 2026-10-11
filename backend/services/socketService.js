@@ -28,6 +28,17 @@ export const initSocket = (httpServer, allowedOrigins = []) => {
   io.on("connection", (socket) => {
     console.log(`🔌 [Socket.IO] Client connected: ${socket.id}`);
 
+    // Join admin dashboard room
+    socket.on("join_admin_dashboard", () => {
+      socket.join("admin_room");
+      console.log(`🛡️ [Socket.IO] ${socket.id} joined admin_room`);
+      socket.emit("live_status", { status: "ACTIVE", message: "Connected to Admin Live Control Center" });
+    });
+    socket.on("join_admin", () => {
+      socket.join("admin_room");
+      console.log(`🛡️ [Socket.IO] ${socket.id} joined admin_room`);
+    });
+
     // Join owner dashboard room
     socket.on("join_owner_dashboard", (data) => {
       socket.join("owner_dashboard");

@@ -45,6 +45,30 @@ import {
   updateChargerHeartbeat,
   setChargerSimulateStatus,
 } from "../controllers/ownerController.js";
+import {
+  getStationPhotos,
+  uploadStationPhotos,
+  setPrimaryPhoto,
+  deleteStationPhoto,
+} from "../controllers/stationPhotoController.js";
+import {
+  getStationEnergyConfig,
+  updateStationEnergyConfig,
+  getStationEnergyDashboard,
+  smartAllocatePower,
+  recordEnergyTelemetry,
+  getStationEnergyHistory,
+  getEnergyCostReports,
+} from "../controllers/energyController.js";
+import {
+  getOwnerProfitabilitySummary,
+  getOwnerProfitabilityStations,
+  getOwnerProfitabilityTrends,
+  getOwnerExpenses,
+  createOwnerExpense,
+  updateOwnerExpense,
+  deleteOwnerExpense,
+} from "../controllers/profitabilityController.js";
 import { authenticate } from "../middleware/authMiddleware.js";
 import { authorizeRoles } from "../middleware/roleMiddleware.js";
 
@@ -68,6 +92,12 @@ router.post("/stations", createOwnerStation);
 router.get("/stations/map", getOwnerStationMap);
 router.put("/stations/:stationId", updateOwnerStation);
 router.delete("/stations/:stationId", deleteOwnerStation);
+
+// 2b. Station Photos Management
+router.get("/stations/:stationId/photos", getStationPhotos);
+router.post("/stations/:stationId/photos", uploadStationPhotos);
+router.put("/stations/:stationId/photos/:photoId/primary", setPrimaryPhoto);
+router.delete("/stations/:stationId/photos/:photoId", deleteStationPhoto);
 
 // 3. Chargers & Simulator
 router.get("/chargers", getOwnerChargers);
@@ -108,6 +138,15 @@ router.get("/transactions", getOwnerTransactions);
 router.post("/payments/create-order", createPaymentOrder);
 router.post("/payments/verify", verifyPaymentTransaction);
 
+// 8b. Station Profitability Advisor & Expenses
+router.get("/profitability/summary", getOwnerProfitabilitySummary);
+router.get("/profitability/stations", getOwnerProfitabilityStations);
+router.get("/profitability/trends", getOwnerProfitabilityTrends);
+router.get("/expenses", getOwnerExpenses);
+router.post("/expenses", createOwnerExpense);
+router.put("/expenses/:expenseId", updateOwnerExpense);
+router.delete("/expenses/:expenseId", deleteOwnerExpense);
+
 // 9. Maintenance & Faults
 router.get("/maintenance", getOwnerMaintenanceTickets);
 router.post("/maintenance", createMaintenanceTicket);
@@ -121,8 +160,16 @@ router.get("/faults", getOwnerFaults);
 router.put("/faults/:faultId/resolve", resolveOwnerFault);
 router.get("/technicians", getOwnerTechnicians);
 
-// 10. Smart Load Management
-router.get("/smart-load/:stationId", getStationLoadProfile);
+// 10. Energy Cost & Smart Load Management
+router.get("/energy/stations/:stationId/config", getStationEnergyConfig);
+router.put("/energy/stations/:stationId/config", updateStationEnergyConfig);
+router.get("/energy/stations/:stationId/dashboard", getStationEnergyDashboard);
+router.get("/energy/stations/:stationId", getStationEnergyDashboard);
+router.post("/energy/stations/:stationId/smart-allocate", smartAllocatePower);
+router.post("/energy/stations/:stationId/telemetry", recordEnergyTelemetry);
+router.get("/energy/stations/:stationId/history", getStationEnergyHistory);
+router.get("/energy/stations/:stationId/cost-reports", getEnergyCostReports);
+router.get("/smart-load/:stationId", getStationEnergyDashboard);
 router.post("/smart-load/:stationId", updateSmartLoadCapacity);
 
 // 11. Analytics

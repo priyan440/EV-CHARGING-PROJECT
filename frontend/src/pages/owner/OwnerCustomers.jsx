@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { getOwnerCustomers } from "../../services/ownerService";
+import Pagination from "../../components/Pagination";
 
 export default function OwnerCustomers() {
   const [customers, setCustomers] = useState([]);
@@ -21,6 +22,9 @@ export default function OwnerCustomers() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [toastMsg, setToastMsg] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(6);
+
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -108,64 +112,79 @@ export default function OwnerCustomers() {
           <p className="text-[var(--text-muted)] text-xs">Customer profiles will populate as sessions are recorded.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredCustomers.map((c) => (
-            <div
-              key={c.customerId || c.customer_id || c.user_id}
-              className="theme-card rounded-3xl p-5 hover:border-purple-500/40 transition-all flex flex-col justify-between shadow-sm"
-            >
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-mono font-bold text-purple-600 dark:text-purple-400 text-xs px-2.5 py-0.5 bg-purple-500/10 rounded-lg border border-purple-500/20">
-                    {c.customerId || c.customer_id}
-                  </span>
-                  <span className="text-[11px] text-[var(--text-muted)] flex items-center gap-1">
-                    <Calendar className="w-3 h-3 text-[var(--text-muted)]" />
-                    Last: {c.lastChargingDate ? new Date(c.lastChargingDate).toLocaleDateString() : "Recent"}
-                  </span>
-                </div>
-
-                <h3 className="text-base font-bold text-[var(--text-primary)] mb-1">{c.customerName || c.name || "EV Driver"}</h3>
-                <div className="space-y-1 text-xs text-[var(--text-muted)] mb-4">
-                  <div className="flex items-center gap-2">
-                    <Mail className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
-                    <span className="truncate">{c.email}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
-                    <span>{c.phone}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[var(--text-primary)] font-medium">
-                    <Car className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                    <span>{c.vehicleModel || "EV Vehicle"} ({c.vehicleNumber || "TN01EV0001"})</span>
-                  </div>
-                </div>
-
-                {/* Stats Grid */}
-                <div className="grid grid-cols-3 gap-2 bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] p-3 rounded-2xl mb-4 text-center text-xs">
-                  <div>
-                    <div className="text-[10px] text-[var(--text-muted)] uppercase">Sessions</div>
-                    <div className="font-bold text-[var(--text-primary)] text-sm">{c.totalSessions || c.sessionCount || 0}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-[var(--text-muted)] uppercase">Energy</div>
-                    <div className="font-bold text-amber-600 dark:text-amber-400 text-sm">{c.totalEnergyKwh || c.energyKwh || 0} kWh</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-[var(--text-muted)] uppercase">Spent</div>
-                    <div className="font-bold text-green-600 dark:text-green-400 text-sm">₹{c.totalSpending || c.totalSpent || c.spent || 0}</div>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setSelectedCustomer(c)}
-                className="w-full py-2 bg-purple-600/10 hover:bg-purple-600 text-purple-600 dark:text-purple-300 hover:text-white rounded-xl text-xs font-bold transition-all border border-purple-500/30 cursor-pointer"
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredCustomers.slice((page - 1) * limit, page * limit).map((c) => (
+              <div
+                key={c.customerId || c.customer_id || c.user_id}
+                className="theme-card rounded-3xl p-5 hover:border-purple-500/40 transition-all flex flex-col justify-between shadow-sm"
               >
-                View Full Profile &rarr;
-              </button>
-            </div>
-          ))}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="font-mono font-bold text-purple-600 dark:text-purple-400 text-xs px-2.5 py-0.5 bg-purple-500/10 rounded-lg border border-purple-500/20">
+                      {c.customerId || c.customer_id}
+                    </span>
+                    <span className="text-[11px] text-[var(--text-muted)] flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-[var(--text-muted)]" />
+                      Last: {c.lastChargingDate ? new Date(c.lastChargingDate).toLocaleDateString() : "Recent"}
+                    </span>
+                  </div>
+
+                  <h3 className="text-base font-bold text-[var(--text-primary)] mb-1">{c.customerName || c.name || "EV Driver"}</h3>
+                  <div className="space-y-1 text-xs text-[var(--text-muted)] mb-4">
+                    <div className="flex items-center gap-2">
+                      <Mail className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
+                      <span className="truncate">{c.email}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
+                      <span>{c.phone}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[var(--text-primary)] font-medium">
+                      <Car className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                      <span>{c.vehicleModel || "EV Vehicle"} ({c.vehicleNumber || "TN01EV0001"})</span>
+                    </div>
+                  </div>
+
+                  {/* Stats Grid */}
+                  <div className="grid grid-cols-3 gap-2 bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] p-3 rounded-2xl mb-4 text-center text-xs">
+                    <div>
+                      <div className="text-[10px] text-[var(--text-muted)] uppercase">Sessions</div>
+                      <div className="font-bold text-[var(--text-primary)] text-sm">{c.totalSessions || c.sessionCount || 0}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-[var(--text-muted)] uppercase">Energy</div>
+                      <div className="font-bold text-amber-600 dark:text-amber-400 text-sm">{c.totalEnergyKwh || c.energyKwh || 0} kWh</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-[var(--text-muted)] uppercase">Spent</div>
+                      <div className="font-bold text-green-600 dark:text-green-400 text-sm">₹{c.totalSpending || c.totalSpent || c.spent || 0}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setSelectedCustomer(c)}
+                  className="w-full py-2 bg-purple-600/10 hover:bg-purple-600 text-purple-600 dark:text-purple-300 hover:text-white rounded-xl text-xs font-bold transition-all border border-purple-500/30 cursor-pointer"
+                >
+                  View Full Profile &rarr;
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <Pagination
+            page={Math.min(page, Math.ceil(filteredCustomers.length / limit) || 1)}
+            totalPages={Math.ceil(filteredCustomers.length / limit) || 1}
+            totalItems={filteredCustomers.length}
+            limit={limit}
+            onPageChange={(p) => setPage(p)}
+            onLimitChange={(l) => {
+              setLimit(l);
+              setPage(1);
+            }}
+            limitOptions={[6, 12, 24, 48]}
+          />
         </div>
       )}
 

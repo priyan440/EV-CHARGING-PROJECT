@@ -24,11 +24,39 @@ import { authorizeRoles } from "../middleware/roleMiddleware.js";
 
 const router = express.Router();
 
+import {
+  getStationPhotos,
+  uploadStationPhotos,
+  setPrimaryPhoto,
+  deleteStationPhoto,
+} from "../controllers/stationPhotoController.js";
+
 // Specific Public Station Routes (Must be before /:id)
 router.get("/approved", getApprovedStations);
 router.get("/map", getStationsMap);
 router.get("/external", getExternalStations);
 router.get("/ev-stations", getExternalStations);
+
+// Station Photos (Public viewing & Owner photo upload)
+router.get("/:stationId/photos", optionalAuth, getStationPhotos);
+router.post(
+  "/:stationId/photos",
+  authenticate,
+  authorizeRoles("STATION_OWNER", "OWNER", "ADMIN"),
+  uploadStationPhotos
+);
+router.put(
+  "/:stationId/photos/:photoId/primary",
+  authenticate,
+  authorizeRoles("STATION_OWNER", "OWNER", "ADMIN"),
+  setPrimaryPhoto
+);
+router.delete(
+  "/:stationId/photos/:photoId",
+  authenticate,
+  authorizeRoles("STATION_OWNER", "OWNER", "ADMIN"),
+  deleteStationPhoto
+);
 
 // Connectors for a specific station (Public / Authenticated)
 router.get("/:stationId/connectors", optionalAuth, getStationConnectors);

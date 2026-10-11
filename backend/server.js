@@ -136,7 +136,15 @@ app.use("/api/auth/register-customer", authLimiter);
 app.use("/api/auth/register-owner", authLimiter);
 app.use("/api/security/change-password", authLimiter);
 
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+// Serve uploaded station images
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+app.use("/uploads", express.static(uploadsDir));
 
 // Initialize MySQL Database Connection & Schema Upgrades
 connectDB().then((connected) => {
@@ -147,20 +155,50 @@ connectDB().then((connected) => {
   }
 });
 
-// Health Check Endpoint (MySQL connectivity verification)
+// Health Check Endpoint (Real MySQL connectivity, latency & subsystem status)
 app.get("/api/health", async (req, res) => {
+  const startTime = Date.now();
   try {
+    const dbPingStart = Date.now();
     await pool.query("SELECT 1");
+    const dbLatencyMs = Date.now() - dbPingStart;
+
+    let chargerStats = { total: 0, online: 0, simulated: 0 };
+    try {
+      const [rows] = await pool.query(
+        "SELECT COUNT(*) as total, SUM(CASE WHEN is_online = 1 THEN 1 ELSE 0 END) as online, SUM(CASE WHEN is_simulated = 1 THEN 1 ELSE 0 END) as simulated FROM chargers"
+      );
+      if (rows && rows[0]) {
+        chargerStats = {
+          total: Number(rows[0].total || 0),
+          online: Number(rows[0].online || 0),
+          simulated: Number(rows[0].simulated || 0),
+        };
+      }
+    } catch {
+      // Table might still be initializing
+    }
+
     res.json({
       status: "OK",
       success: true,
-      message: "EV Charging API is running",
+      message: "EV Charging API and MySQL Database operational",
       database: "connected",
+      dbLatencyMs,
+      responseTimeMs: Date.now() - startTime,
       timestamp: new Date().toISOString(),
+      chargerTelemetry: {
+        totalChargers: chargerStats.total,
+        onlineChargers: chargerStats.online,
+        simulatedChargers: chargerStats.simulated,
+        simulatorStatus: chargerStats.simulated > 0 ? "OPERATIONAL" : "READY",
+      },
       services: {
         backendApi: "ONLINE",
         database: "ONLINE",
         mysql: "ONLINE",
+        webSocketServer: "ONLINE",
+        ocppEngine: "SIMULATOR_ACTIVE",
         razorpayGateway: "TEST_MODE_ACTIVE",
       },
     });
@@ -170,6 +208,15 @@ app.get("/api/health", async (req, res) => {
       success: false,
       message: "Database connection failed",
       database: "disconnected",
+      timestamp: new Date().toISOString(),
+      services: {
+        backendApi: "ONLINE",
+        database: "OFFLINE",
+        mysql: "OFFLINE",
+        webSocketServer: "ONLINE",
+        ocppEngine: "UNAVAILABLE",
+        razorpayGateway: "UNAVAILABLE",
+      },
       error: err.message,
     });
   }

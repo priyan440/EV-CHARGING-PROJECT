@@ -26,6 +26,7 @@ import {
   getOwnerTechnicians,
 } from "../../services/ownerService";
 import { getSocket } from "../../services/socketService";
+import Pagination from "../../components/Pagination";
 
 export default function OwnerMaintenance() {
   const [tickets, setTickets] = useState([]);
@@ -42,6 +43,11 @@ export default function OwnerMaintenance() {
   const [resolutionNotes, setResolutionNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
+  const [pageTickets, setPageTickets] = useState(1);
+  const [limitTickets, setLimitTickets] = useState(5);
+  const [pageFaults, setPageFaults] = useState(1);
+  const [limitFaults, setLimitFaults] = useState(5);
+
 
   const [ticketForm, setTicketForm] = useState({
     stationId: "",
@@ -275,7 +281,7 @@ export default function OwnerMaintenance() {
           </div>
         ) : (
           <div className="space-y-4">
-            {tickets.map((t) => {
+            {tickets.slice((pageTickets - 1) * limitTickets, pageTickets * limitTickets).map((t) => {
               const status = (t.status || "OPEN").toUpperCase();
               const isResolved = status === "RESOLVED" || status === "CLOSED";
               const ticketId = t.ticket_id || t.ticketId || t.id;
@@ -380,6 +386,19 @@ export default function OwnerMaintenance() {
                 </div>
               );
             })}
+
+            <Pagination
+              page={Math.min(pageTickets, Math.ceil(tickets.length / limitTickets) || 1)}
+              totalPages={Math.ceil(tickets.length / limitTickets) || 1}
+              totalItems={tickets.length}
+              limit={limitTickets}
+              onPageChange={(p) => setPageTickets(p)}
+              onLimitChange={(l) => {
+                setLimitTickets(l);
+                setPageTickets(1);
+              }}
+              limitOptions={[5, 10, 20]}
+            />
           </div>
         )
       ) : (
@@ -392,7 +411,7 @@ export default function OwnerMaintenance() {
           </div>
         ) : (
           <div className="space-y-4">
-            {faults.map((f) => {
+            {faults.slice((pageFaults - 1) * limitFaults, pageFaults * limitFaults).map((f) => {
               const isActive = f.status === "ACTIVE";
 
               return (
@@ -433,6 +452,19 @@ export default function OwnerMaintenance() {
                 </div>
               );
             })}
+
+            <Pagination
+              page={Math.min(pageFaults, Math.ceil(faults.length / limitFaults) || 1)}
+              totalPages={Math.ceil(faults.length / limitFaults) || 1}
+              totalItems={faults.length}
+              limit={limitFaults}
+              onPageChange={(p) => setPageFaults(p)}
+              onLimitChange={(l) => {
+                setLimitFaults(l);
+                setPageFaults(1);
+              }}
+              limitOptions={[5, 10, 20]}
+            />
           </div>
         )
       )}

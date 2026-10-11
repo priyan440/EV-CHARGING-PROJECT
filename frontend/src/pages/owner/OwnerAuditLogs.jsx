@@ -13,6 +13,7 @@ import {
   Layers
 } from "lucide-react";
 import { getOwnerAuditLogs } from "../../services/ownerService";
+import Pagination from "../../components/Pagination";
 
 export default function OwnerAuditLogs() {
   const [logs, setLogs] = useState([]);
@@ -20,6 +21,9 @@ export default function OwnerAuditLogs() {
   const [searchTerm, setSearchTerm] = useState("");
   const [entityFilter, setEntityFilter] = useState("ALL");
   const [selectedLog, setSelectedLog] = useState(null);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+
 
   const loadLogs = async () => {
     try {
@@ -150,7 +154,7 @@ export default function OwnerAuditLogs() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                {filteredLogs.map((log) => {
+                {filteredLogs.slice((page - 1) * limit, page * limit).map((log) => {
                   const id = log._id || log.id;
                   return (
                     <tr
@@ -202,6 +206,19 @@ export default function OwnerAuditLogs() {
                 })}
               </tbody>
             </table>
+
+            <Pagination
+              page={Math.min(page, Math.ceil(filteredLogs.length / limit) || 1)}
+              totalPages={Math.ceil(filteredLogs.length / limit) || 1}
+              totalItems={filteredLogs.length}
+              limit={limit}
+              onPageChange={(p) => setPage(p)}
+              onLimitChange={(l) => {
+                setLimit(l);
+                setPage(1);
+              }}
+              limitOptions={[10, 20, 50]}
+            />
           </div>
         )}
       </div>

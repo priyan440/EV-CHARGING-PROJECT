@@ -11,8 +11,9 @@ class SocketService {
     if (import.meta.env.VITE_SOCKET_URL) {
       return import.meta.env.VITE_SOCKET_URL;
     }
-    if (import.meta.env.VITE_API_URL) {
-      return import.meta.env.VITE_API_URL.replace(/\/api\/?$/, "");
+    const apiUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
+    if (apiUrl) {
+      return apiUrl.replace(/\/api\/?$/, "");
     }
     if (typeof window !== "undefined") {
       const hostname = window.location.hostname || "localhost";

@@ -1,6 +1,7 @@
 import mysql from "mysql2/promise";
 import dotenv from "dotenv";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -15,9 +16,25 @@ const getPoolConfig = () => {
   const isCloudHost = process.env.DB_HOST && !["localhost", "127.0.0.1"].includes(process.env.DB_HOST);
   const useSsl = process.env.DB_SSL === "true" || process.env.MYSQL_SSL === "true" || (isCloudHost && process.env.DB_SSL !== "false");
 
+  // Load CA certificate if available (e.g., ISRG Root X1 for TiDB Cloud)
+  let caCert;
+  const defaultCertPath = path.join(__dirname, "../certs/isrgrootx1.pem");
+  const caPath = process.env.DB_CA_PATH || (fs.existsSync(defaultCertPath) ? defaultCertPath : null);
+
+  if (process.env.DB_CA_CERT) {
+    caCert = process.env.DB_CA_CERT;
+  } else if (caPath && fs.existsSync(caPath)) {
+    try {
+      caCert = fs.readFileSync(caPath);
+    } catch (certErr) {
+      console.warn(`[MySQL SSL Warning] Could not read CA cert from ${caPath}:`, certErr.message);
+    }
+  }
+
   const sslConfig = useSsl
     ? {
-        rejectUnauthorized: false,
+        minVersion: "TLSv1.2",
+        ...(caCert ? { ca: caCert, rejectUnauthorized: true } : { rejectUnauthorized: false }),
       }
     : undefined;
 

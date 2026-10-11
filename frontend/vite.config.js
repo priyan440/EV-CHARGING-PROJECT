@@ -8,6 +8,7 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     host: true,
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'https://ev-charging-project-81ck.onrender.com',
@@ -26,6 +27,7 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     host: true,
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'https://ev-charging-project-81ck.onrender.com',

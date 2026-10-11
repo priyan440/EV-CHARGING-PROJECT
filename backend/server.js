@@ -4,6 +4,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 
 import { connectDB, pool } from "./config/db.js";
@@ -301,19 +302,33 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Serve compiled frontend production build if present
-import fs from "fs";
+// Serve compiled frontend production build (Single Full-Stack Service Architecture)
 const frontendDistPath = path.join(__dirname, "../frontend/dist");
 const rootDistPath = path.join(__dirname, "../dist");
 const distPath = fs.existsSync(frontendDistPath) ? frontendDistPath : rootDistPath;
 
-app.use(express.static(distPath));
-app.get("*", (req, res, next) => {
-  if (req.path.startsWith("/api")) return next();
-  res.sendFile(path.join(distPath, "index.html"), (err) => {
-    if (err) next();
+if (fs.existsSync(distPath)) {
+  console.log(`📦 Serving compiled production frontend from ${distPath}`);
+  app.use(express.static(distPath));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api") || req.path.startsWith("/socket.io")) return next();
+    res.sendFile(path.join(distPath, "index.html"), (err) => {
+      if (err) next();
+    });
   });
-});
+} else {
+  console.warn(`⚠️ Frontend build directory not found at ${distPath}. API mode active.`);
+  app.get("/", (req, res) => {
+    res.json({
+      success: true,
+      service: "EV Charging Station API",
+      status: "ONLINE",
+      healthEndpoint: "/api/health",
+      database: "TiDB Cloud",
+      notice: "Production frontend build not found on disk. Run 'npm run build' to bundle frontend."
+    });
+  });
+}
 
 // Initialize Socket.IO Real-Time Engine
 initSocket(server, allowedOrigins);

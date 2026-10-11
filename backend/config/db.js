@@ -76,9 +76,27 @@ export const query = async (sql, params = []) => {
     ? params.map((p) => (p === undefined ? null : p))
     : params;
   try {
+    // If query has LIMIT clause, use pool.query (TiDB Cloud doesn't support parameterized LIMIT in prepared statements)
+    const hasLimit = /\bLIMIT\b/i.test(sql);
+    if (hasLimit) {
+      const [rows] = await pool.query(sql, safeParams);
+      return rows;
+    }
     const [rows] = await pool.execute(sql, safeParams);
     return rows;
   } catch (err) {
+    if (
+      err.message &&
+      (err.message.includes("Incorrect arguments to LIMIT") || err.code === "ER_WRONG_ARGUMENTS")
+    ) {
+      try {
+        const [retryRows] = await pool.query(sql, safeParams);
+        return retryRows;
+      } catch (retryErr) {
+        console.error(`[MySQL Query Error on Retry] ${retryErr.message}\nSQL: ${sql}\nParams:`, safeParams);
+        throw retryErr;
+      }
+    }
     console.error(`[MySQL Query Error] ${err.message}\nSQL: ${sql}\nParams:`, safeParams);
     throw err;
   }

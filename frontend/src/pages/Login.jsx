@@ -23,6 +23,10 @@ import Toast from "../components/Toast";
 import ThemeToggle from "../components/ThemeToggle";
 import OTPInput from "../components/OTPInput";
 
+const googleClientId =
+  import.meta.env.VITE_GOOGLE_CLIENT_ID ||
+  "142944835630-noevnc3adlsnd908bhu29r341qu9leba.apps.googleusercontent.com";
+
 export default function Login() {
   const navigate = useNavigate();
   const {
@@ -744,7 +748,7 @@ export default function Login() {
 
         {/* GOOGLE OAUTH BUTTON CONTAINER */}
         <div className="space-y-3">
-          {(!import.meta.env.VITE_GOOGLE_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID.includes("your_google_client_id")) && (
+          {(!googleClientId || googleClientId.includes("your_google_client_id")) && (
             <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-[11px] leading-tight flex items-start gap-2">
               <AlertCircle size={15} className="shrink-0 mt-0.5" />
               <div>

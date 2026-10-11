@@ -41,6 +41,9 @@ dotenv.config({ path: path.join(__dirname, ".env") });
 dotenv.config();
 
 const app = express();
+// Enable trust proxy for Render / Cloudflare reverse proxies
+app.set("trust proxy", 1);
+
 const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
 
@@ -116,6 +119,7 @@ const generalLimiter = rateLimit({
   max: isDev ? 50000 : 1000, // High throughput in dev
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: {
     success: false,
     message: "Too many requests from this IP. Please try again after 15 minutes.",
@@ -124,9 +128,10 @@ const generalLimiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDev ? 1000 : 20, // Limit auth attempts
+  max: isDev ? 1000 : 50, // Limit auth attempts
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: {
     success: false,
     message: "Too many authentication attempts. Please try again after 15 minutes.",

@@ -15,12 +15,7 @@ class SocketService {
     if (apiUrl) {
       return apiUrl.replace(/\/api\/?$/, "");
     }
-    if (typeof window !== "undefined") {
-      const hostname = window.location.hostname || "localhost";
-      const protocol = window.location.protocol === "https:" ? "https:" : "http:";
-      return `${protocol}//${hostname}:5001`;
-    }
-    return "http://localhost:5001";
+    return "https://ev-charging-project-81ck.onrender.com";
   }
 
   connect() {

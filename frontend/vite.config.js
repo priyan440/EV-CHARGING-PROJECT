@@ -8,10 +8,36 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     host: true,
+    proxy: {
+      '/api': {
+        target: 'https://ev-charging-project-81ck.onrender.com',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/socket.io': {
+        target: 'https://ev-charging-project-81ck.onrender.com',
+        changeOrigin: true,
+        ws: true,
+        secure: false,
+      },
+    },
   },
   preview: {
     port: 5173,
     strictPort: true,
     host: true,
+    proxy: {
+      '/api': {
+        target: 'https://ev-charging-project-81ck.onrender.com',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/socket.io': {
+        target: 'https://ev-charging-project-81ck.onrender.com',
+        changeOrigin: true,
+        ws: true,
+        secure: false,
+      },
+    },
   },
 })
